@@ -1,0 +1,29 @@
+{
+  "name": "winners-ai-persona",
+  "version": "0.1.0",
+  "description": "학원 원장님 AI 페르소나 B2B 서비스 MVP (학생 힌트 질문창 + 원장 대시보드 + 학부모 주간 알림톡)",
+  "main": "src/server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/server.js",
+    "db:setup": "node db/setup.js",
+    "render-start": "node db/setup.js && node src/server.js",
+    "db:init": "psql \"$DATABASE_URL\" -f db/schema.sql -f db/functions.sql",
+    "report:dry-run": "DRY_RUN=1 node -e \"require('./src/jobs/weeklyReport').runWeeklyReports({force:true})\""
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.60.0",
+    "bcryptjs": "^2.4.3",
+    "cookie-parser": "^1.4.6",
+    "express": "^4.21.0",
+    "express-rate-limit": "^7.4.0",
+    "helmet": "^8.0.0",
+    "jsonwebtoken": "^9.0.2",
+    "node-cron": "^3.0.3",
+    "pg": "^8.13.0",
+    "solapi": "^5.3.0"
+  }
+}

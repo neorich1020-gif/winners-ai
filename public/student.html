@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<title>원장쌤에게 물어보기</title>
+<meta name="theme-color" content="#FAF8F5" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#121317" media="(prefers-color-scheme: dark)">
+<!-- PWA: 반별 manifest는 student.js가 주소(/s/<토큰>)에 맞춰 연결 -->
+<link rel="manifest" id="manifest-link" href="">
+<link rel="icon" type="image/png" href="/icons/favicon-32.png">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<!-- 글꼴: Pretendard (OFL 라이선스) — 공식 CDN에서 필요한 글자만 나눠 받음. 실패하면 기기 기본 글꼴 -->
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="원장쌤">
+<style>
+/* 레이아웃: 상단 고정 헤더 · 가운데 대화 · 하단 떠 있는 둥근 입력창 (최대 폭 560px, 휴대폰 우선) */
+:root{
+  --bg:#FAF8F5; --surface:#FFFFFF; --ink:#1F2430; --sub:#5E6472; --muted:#9AA0AB; --hair:#EFEBE5;
+  --brand:#4F5BD5; --brand-2:#6C74E8; --brand-ink:#FFFFFF; --brand-soft:#EEF0FE;
+  --hint:#FFB020; --hint-soft:#FFF4DB; --ok:#21B26B; --ok-soft:#E3F7EC; --bad:#E5484D;
+  --shadow-sm:0 1px 2px rgba(31,36,48,.05), 0 1px 1px rgba(31,36,48,.03);
+  --shadow-lg:0 10px 30px rgba(31,36,48,.10), 0 2px 6px rgba(31,36,48,.05);
+  --font:"Pretendard Variable",Pretendard,-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic",sans-serif;
+  --r-bubble:20px;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#121317; --surface:#1C1E25; --ink:#ECEDF1; --sub:#B4B8C2; --muted:#7D8290; --hair:#262932;
+  --brand:#7C86F0; --brand-2:#8F98F5; --brand-soft:#262A47; --hint-soft:#3A2F17; --ok-soft:#173326;
+  --shadow-sm:none; --shadow-lg:0 10px 30px rgba(0,0,0,.45); color-scheme:dark}}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--font);font-size:16px;line-height:1.6;-webkit-text-size-adjust:100%;letter-spacing:-.01em}
+button,input,textarea{font:inherit;color:inherit;letter-spacing:inherit}
+button{cursor:pointer;border:0;background:none;padding:0}
+:focus-visible{outline:2px solid var(--brand);outline-offset:2px;border-radius:12px}
+[hidden]{display:none!important}
+.app{min-height:100%;max-width:560px;margin:0 auto;display:flex;flex-direction:column}
+
+/* ---------- 헤더 ---------- */
+.head{position:sticky;top:0;z-index:4;padding:calc(env(safe-area-inset-top,0px) + 10px) 16px 10px;
+  background:color-mix(in srgb,var(--bg) 86%,transparent);-webkit-backdrop-filter:saturate(1.4) blur(14px);backdrop-filter:saturate(1.4) blur(14px)}
+.head-row{display:flex;align-items:center;gap:12px}
+.logo{flex:none;width:42px;height:42px;border-radius:14px;display:grid;place-items:center;font-weight:800;font-size:18px;color:#fff;
+  background:linear-gradient(140deg,var(--brand-2),var(--brand));box-shadow:0 4px 12px color-mix(in srgb,var(--brand) 30%,transparent)}
+.titles{flex:1;min-width:0}
+.name-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.acad{font-size:17px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.status{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--ok);background:var(--ok-soft);padding:3px 9px 3px 8px;border-radius:999px}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 0 color-mix(in srgb,var(--ok) 60%,transparent);animation:pulse 2.4s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--ok) 55%,transparent)}70%{box-shadow:0 0 0 7px transparent}100%{box-shadow:0 0 0 0 transparent}}
+.cls{font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ghost{font-size:13px;color:var(--muted);padding:8px 4px}
+
+/* 힌트 단계: 듀오링고식 진행 막대 */
+.progress{margin-top:10px;display:flex;align-items:center;gap:10px}
+.ladder{flex:1;display:grid;grid-template-columns:repeat(5,1fr);gap:4px}
+.ladder span{height:8px;border-radius:999px;background:var(--hair);transition:background .3s}
+.ladder span.on{background:var(--hint)}
+.ladder-label{font-size:12.5px;font-weight:600;color:var(--sub);white-space:nowrap}
+
+/* ---------- 로그인 ---------- */
+.login{flex:1;display:flex;flex-direction:column;justify-content:center;gap:14px;padding:24px 22px 48px}
+.login .hello{font-size:26px;font-weight:800;letter-spacing:-.02em;margin:0}
+.login .lead{margin:0 0 6px;color:var(--sub)}
+.field{display:flex;flex-direction:column;gap:6px;font-size:14px;font-weight:600;color:var(--sub)}
+.field input{border:0;border-radius:16px;padding:16px;background:var(--surface);box-shadow:var(--shadow-sm);font-size:22px;font-weight:700;letter-spacing:.3em;text-align:center;color:var(--ink)}
+.field input:focus{outline:2px solid var(--brand);outline-offset:0}
+.primary{border-radius:999px;padding:16px 20px;font-weight:700;font-size:16px;background:var(--brand);color:var(--brand-ink);box-shadow:0 6px 16px color-mix(in srgb,var(--brand) 30%,transparent)}
+.primary:disabled{opacity:.5;box-shadow:none}
+.err{color:var(--bad);font-size:14px;min-height:1.4em;margin:0}
+
+/* ---------- 대화 ---------- */
+.chat{flex:1;padding:8px 16px 180px;display:flex;flex-direction:column;gap:14px}
+.row{display:flex;gap:10px;align-items:flex-end;max-width:100%;animation:rise .28s ease-out both}
+@keyframes rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.row.me{justify-content:flex-end}
+.avatar{flex:none;width:36px;height:36px;border-radius:50%;background:var(--brand-soft);display:grid;place-items:center;align-self:flex-start}
+.avatar svg{width:28px;height:28px}
+.stack{display:flex;flex-direction:column;gap:4px;min-width:0;max-width:80%}
+.row.me .stack{align-items:flex-end}
+.who{font-size:12.5px;font-weight:600;color:var(--sub);margin-left:2px}
+.bubble{padding:12px 16px;border-radius:var(--r-bubble);white-space:pre-wrap;word-break:keep-all;overflow-wrap:anywhere;font-size:15.5px;line-height:1.7}
+.ai .bubble{background:var(--surface);box-shadow:var(--shadow-sm);border-top-left-radius:6px}
+.me .bubble{background:var(--brand);color:var(--brand-ink);border-top-right-radius:6px}
+.bubble img{display:block;width:100%;max-width:260px;max-height:280px;object-fit:cover;border-radius:14px;margin:2px 0 8px}
+.me .bubble.photo-only{padding:4px;background:transparent}
+.me .bubble.photo-only img{margin:0}
+.time{font-size:11px;color:var(--muted);margin:0 4px}
+.sys{align-self:center;font-size:13px;color:var(--sub);background:color-mix(in srgb,var(--hair) 70%,transparent);padding:6px 12px;border-radius:999px;text-align:center;max-width:90%}
+
+/* 생각 중… */
+.typing .bubble{display:flex;align-items:center;gap:10px;color:var(--sub);font-size:14px}
+.dots{display:inline-flex;gap:4px}
+.dots i{width:7px;height:7px;border-radius:50%;background:var(--brand);opacity:.35;animation:bounce 1.2s infinite}
+.dots i:nth-child(2){animation-delay:.15s}.dots i:nth-child(3){animation-delay:.3s}
+@keyframes bounce{0%,60%,100%{transform:translateY(0);opacity:.35}30%{transform:translateY(-5px);opacity:1}}
+
+/* ---------- 하단 떠 있는 입력 영역 ---------- */
+.dock{position:fixed;left:0;right:0;bottom:0;z-index:5;pointer-events:none;
+  padding:0 12px calc(env(safe-area-inset-bottom,0px) + 12px);background:linear-gradient(to top,var(--bg) 55%,transparent)}
+.dock-inner{max-width:536px;margin:0 auto;display:flex;flex-direction:column;gap:8px;pointer-events:auto}
+.chips{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding:2px}
+.chips::-webkit-scrollbar{display:none}
+.chip{flex:none;padding:8px 14px;border-radius:999px;font-size:14px;font-weight:600;background:var(--surface);box-shadow:var(--shadow-sm);color:var(--ink)}
+.chip.hint{background:var(--hint-soft);color:#8A5A00}
+@media (prefers-color-scheme:dark){.chip.hint{color:#FFCF70}}
+.chip:active,.icon-btn:active,.primary:active{transform:scale(.96)}
+.preview{display:flex;align-items:center;gap:12px;background:var(--surface);border-radius:18px;padding:8px 10px;box-shadow:var(--shadow-lg)}
+.preview img{width:52px;height:52px;object-fit:cover;border-radius:12px}
+.preview-info{flex:1;font-size:13px;color:var(--sub);line-height:1.45}
+.icon-btn{flex:none;width:42px;height:42px;border-radius:50%;display:grid;place-items:center;transition:transform .1s,background .2s}
+.icon-btn svg{width:22px;height:22px}
+.pill{display:flex;align-items:flex-end;gap:6px;background:var(--surface);border-radius:28px;padding:6px;box-shadow:var(--shadow-lg)}
+.cam{background:var(--brand-soft);color:var(--brand);position:relative}
+.cam-badge{position:absolute;top:-4px;right:-4px;min-width:20px;height:20px;padding:0 5px;border-radius:999px;background:var(--brand);color:#fff;font-size:11px;font-weight:700;display:grid;place-items:center;border:2px solid var(--surface)}
+.cam-badge.low{background:var(--hint)}
+.cam-badge.zero{background:var(--muted)}
+.pill textarea{flex:1;min-width:0;border:0;background:transparent;resize:none;padding:10px 4px;max-height:120px;font-size:16px;line-height:1.45;color:var(--ink)}
+.pill textarea:focus{outline:none}
+.pill textarea::placeholder{color:var(--muted)}
+.send{background:var(--brand);color:#fff}
+.send:disabled{background:var(--hair);color:var(--muted)}
+.x{width:32px;height:32px;background:var(--hair);color:var(--sub)}
+.x svg{width:16px;height:16px}
+
+/* ---------- 바텀 시트 / 팝업 ---------- */
+.scrim{position:fixed;inset:0;z-index:8;background:rgba(17,19,26,.38);display:flex;align-items:flex-end;justify-content:center;animation:fade .2s}
+.scrim.center{align-items:center;padding:20px}
+@keyframes fade{from{opacity:0}}
+.sheet{width:100%;max-width:560px;background:var(--surface);border-radius:24px 24px 0 0;padding:10px 16px calc(env(safe-area-inset-bottom,0px) + 18px);display:flex;flex-direction:column;gap:8px;animation:up .25s ease-out}
+@keyframes up{from{transform:translateY(30px);opacity:.5}}
+.grab{width:40px;height:5px;border-radius:999px;background:var(--hair);margin:0 auto 6px}
+.sheet .tip{margin:0 4px 6px;color:var(--sub);font-size:14px}
+.opt{display:flex;align-items:center;gap:14px;padding:14px;border-radius:16px;background:var(--bg);font-weight:600;font-size:16px;text-align:left}
+.opt .ic{width:40px;height:40px;border-radius:12px;background:var(--brand-soft);color:var(--brand);display:grid;place-items:center}
+.opt .ic svg{width:22px;height:22px}
+.opt small{display:block;font-weight:400;color:var(--muted);font-size:12.5px}
+.cancel{padding:14px;color:var(--sub);font-weight:600}
+.modal{width:100%;max-width:360px;background:var(--surface);border-radius:24px;padding:26px 22px 18px;text-align:center;box-shadow:var(--shadow-lg);animation:up .25s ease-out}
+.modal .big{font-size:42px;line-height:1}
+.modal h2{font-size:19px;margin:12px 0 6px;letter-spacing:-.02em}
+.modal p{margin:0 0 8px;color:var(--sub);font-size:14.5px}
+.modal .upsell{display:flex;gap:10px;align-items:center;text-align:left;background:var(--brand-soft);border-radius:16px;padding:12px 14px;margin:12px 0 16px;font-size:13.5px;color:var(--ink)}
+.modal .upsell b{color:var(--brand)}
+.modal .primary{width:100%}
+
+/* 홈 화면 추가 안내 */
+.install{margin:4px 16px 0;background:var(--surface);border-radius:18px;padding:12px 14px;box-shadow:var(--shadow-sm);font-size:14px;display:flex;gap:12px;align-items:center}
+.install .logo{width:36px;height:36px;border-radius:11px;font-size:15px}
+.install div{flex:1;min-width:0}
+.install b{display:block;font-size:14px}
+.install span{color:var(--sub);font-size:12.5px}
+.install .add{padding:8px 14px;border-radius:999px;background:var(--brand);color:#fff;font-weight:700;font-size:13px}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="head">
+    <div class="head-row">
+      <div class="logo" id="logo" aria-hidden="true">위</div>
+      <div class="titles">
+        <div class="name-row">
+          <span class="acad" id="acad">불러오는 중…</span>
+          <span class="status" id="status-pill"><i class="dot"></i><span id="status-text">원장쌤 온라인</span></span>
+        </div>
+        <div class="cls" id="cls-name"></div>
+      </div>
+      <button class="ghost" id="logout" hidden>로그아웃</button>
+    </div>
+    <div class="progress" id="ladder-wrap" hidden>
+      <div class="ladder" id="ladder" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+      <div class="ladder-label" id="ladder-label" aria-live="polite"></div>
+    </div>
+    <span id="persona" hidden>원장쌤</span>
+  </header>
+
+  <section class="login" id="login" hidden>
+    <p class="hello" id="login-title">반가워! 👋</p>
+    <p class="lead">선생님께 받은 출석번호와 비밀번호 4자리를 넣어 줘.</p>
+    <label class="field">출석번호<input id="code" inputmode="numeric" autocomplete="off" maxlength="4"></label>
+    <label class="field">비밀번호 4자리<input id="pin" type="password" inputmode="numeric" autocomplete="off" maxlength="4"></label>
+    <p class="err" id="login-err" role="alert"></p>
+    <button class="primary" id="login-btn">들어가기</button>
+  </section>
+
+  <div class="install" id="install" hidden>
+    <div class="logo" aria-hidden="true" id="install-logo">위</div>
+    <div><b>홈 화면에 추가하면 앱처럼 바로 열려요</b><span id="install-tip"></span></div>
+    <button class="add" id="install-btn" hidden>추가</button>
+    <button class="ghost" id="install-close" aria-label="안내 닫기">✕</button>
+  </div>
+
+  <main class="chat" id="chat" aria-live="polite" hidden></main>
+</div>
+
+<!-- 하단 떠 있는 입력창 -->
+<footer class="dock" id="bar" hidden>
+  <div class="dock-inner">
+    <div class="chips" role="toolbar" aria-label="빠른 버튼">
+      <button class="chip hint" id="more-hint">💡 힌트 하나 더</button>
+      <button class="chip" id="solved">✅ 풀었어요</button>
+      <button class="chip" id="new-q">✏️ 새 문제</button>
+    </div>
+    <div class="preview" id="preview" hidden>
+      <img id="preview-img" alt="보낼 문제 사진">
+      <div class="preview-info" id="preview-info"></div>
+      <button class="icon-btn x" id="preview-x" aria-label="사진 빼기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+    <div class="pill">
+      <button class="icon-btn cam" id="cam" aria-label="문제 사진 올리기">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h1.6l1.2-1.8A1.5 1.5 0 0 1 10.55 3.5h2.9a1.5 1.5 0 0 1 1.25.7L15.9 6h1.6A2.5 2.5 0 0 1 20 8.5v8A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5z"/><circle cx="12" cy="12.5" r="3.4"/></svg>
+        <span class="cam-badge" id="cam-badge" hidden></span>
+      </button>
+      <textarea id="text" rows="1" placeholder="문제나 내 풀이를 적어 줘" aria-label="질문 입력"></textarea>
+      <button class="icon-btn send" id="send" aria-label="보내기" disabled>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5.5 11.5L12 5l6.5 6.5"/></svg>
+      </button>
+    </div>
+  </div>
+</footer>
+
+<!-- 카메라로 찍기 / 앨범에서 고르기 -->
+<div class="scrim" id="sheet" hidden>
+  <div class="sheet" role="dialog" aria-label="사진 올리기">
+    <div class="grab"></div>
+    <p class="tip" id="sheet-tip">문제 하나가 화면에 꽉 차게, 그림자 없이 찍어 줘.</p>
+    <button class="opt" id="pick-camera"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h1.6l1.2-1.8A1.5 1.5 0 0 1 10.55 3.5h2.9a1.5 1.5 0 0 1 1.25.7L15.9 6h1.6A2.5 2.5 0 0 1 20 8.5v8A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5z"/><circle cx="12" cy="12.5" r="3.4"/></svg></span><span>카메라로 찍기<small>문제집을 바로 촬영</small></span></button>
+    <button class="opt" id="pick-album"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><circle cx="9" cy="10" r="1.8"/><path d="M20.5 16l-5-5-8 8.5"/></svg></span><span>앨범에서 고르기<small>미리 찍어 둔 사진</small></span></button>
+    <button class="cancel" id="sheet-cancel">취소</button>
+  </div>
+</div>
+
+<!-- 사진 질문 한도 소진 (라이트 플랜 월 100회) -->
+<div class="scrim center" id="quota" hidden>
+  <div class="modal" role="alertdialog" aria-labelledby="quota-title" aria-describedby="quota-desc">
+    <div class="big" aria-hidden="true">📸</div>
+    <h2 id="quota-title">이번 달 사진 질문을 모두 썼어요</h2>
+    <p id="quota-desc">문제를 글로 적어 보내면 지금 바로 도와줄게!</p>
+    <div class="upsell"><span aria-hidden="true">✨</span><span>원장님께 사진 질문이 무제한인 <b>스탠다드 플랜</b> 안내가 전달됐어요. 다음 달 1일에 다시 채워져요.</span></div>
+    <button class="primary" id="quota-ok">글로 질문하기</button>
+  </div>
+</div>
+
+<input type="file" id="file-camera" accept="image/*" capture="environment" hidden>
+<input type="file" id="file-album" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" hidden>
+
+<template id="avatar-tpl">
+  <div class="avatar" aria-hidden="true">
+    <svg viewBox="0 0 32 32"><circle cx="16" cy="18" r="10" fill="#FFE2C6"/><path d="M6 11.5L16 7l10 4.5L16 16z" fill="#4F5BD5"/><path d="M22.5 13v4.2" stroke="#4F5BD5" stroke-width="1.4" stroke-linecap="round"/><circle cx="22.5" cy="17.6" r="1.1" fill="#FFB020"/><circle cx="12.6" cy="19" r="1.25" fill="#1F2430"/><circle cx="19.4" cy="19" r="1.25" fill="#1F2430"/><path d="M13 22.3c1.7 1.5 4.3 1.5 6 0" stroke="#1F2430" stroke-width="1.3" fill="none" stroke-linecap="round"/><circle cx="10.6" cy="21.6" r="1.3" fill="#FF9AA2" opacity=".55"/><circle cx="21.4" cy="21.6" r="1.3" fill="#FF9AA2" opacity=".55"/></svg>
+  </div>
+</template>
+
+<script src="/student.js"></script>
+</body>
+</html>

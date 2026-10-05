@@ -1,0 +1,54 @@
+# =====================================================================
+# Render 자동 배포 설정 (Blueprint)
+# Render 대시보드 → New → Blueprint → 이 저장소를 고르면 아래가 한 번에 만들어집니다.
+#   - winners-ai      : 웹 서버 (학생 질문창, 원장 API, 금요일 알림톡·자동결제 스케줄러)
+#   - winners-ai-db   : PostgreSQL (서버 시작 때 db/setup.js가 테이블·학원 분리를 자동 설정)
+# 보안 키 3개는 Render가 무작위로 만들어 주고, Claude API 키·체험 PIN만 직접 입력합니다.
+# 솔라피·카카오·토스 키는 승인 후 서비스의 Environment 메뉴에서 추가합니다.
+# =====================================================================
+services:
+  - type: web
+    name: winners-ai
+    runtime: node
+    region: singapore          # 한국과 가장 가까운 Render 지역
+    plan: 0.5c-512mb           # 유료 최소 사양: 잠들지 않아야 금요일 발송을 놓치지 않고, 내 도메인 연결 가능
+    buildCommand: npm install
+    startCommand: npm run render-start
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: winners-ai-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: PII_ENC_KEY
+        generateValue: true
+      - key: PII_HASH_KEY
+        generateValue: true
+      - key: ANTHROPIC_API_KEY
+        sync: false                # 배포할 때 직접 입력 (Claude API 키)
+      - key: DEMO_STUDENT_PIN
+        sync: false                # 체험 학생 비밀번호 숫자 4자리
+      - key: AI_MODEL
+        value: claude-haiku-4-5-20251001
+      - key: AI_REPORT_MODEL
+        value: claude-sonnet-4-5
+      - key: DRY_RUN
+        value: "1"                 # 알림톡 실제 발송 안 함 (시험 끝나면 0으로)
+      - key: SENDER_PHONE
+        value: "01020005369"
+      - key: COUNSEL_MODE
+        value: inline
+      - key: STUDENT_SESSION_HOURS
+        value: "168"
+
+databases:
+  - name: winners-ai-db
+    region: singapore
+    plan: 0.1c-256mb
+    databaseName: winners_ai
+    user: winners_ai
+    ipAllowList: []                # 외부 접속 차단: Render 안의 서버만 연결 가능

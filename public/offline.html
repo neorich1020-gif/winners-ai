@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>인터넷 연결 확인</title>
+<meta name="theme-color" content="#FAF8F5">
+<style>
+:root{--bg:#FAF8F5;--ink:#1F2430;--muted:#5E6472;--board:#4F5BD5}
+@media (prefers-color-scheme:dark){:root{--bg:#121317;--ink:#ECEDF1;--muted:#B4B8C2;--board:#7C86F0;color-scheme:dark}}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font-family:"Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center}
+img{width:72px;height:72px;border-radius:18px}
+h1{font-size:20px;margin:16px 0 6px}
+p{color:var(--muted);margin:0 0 20px}
+.btn{display:inline-block;border-radius:999px;padding:14px 26px;font-weight:700;background:var(--board);color:#fff;text-decoration:none}
+</style>
+</head>
+<body>
+<div>
+  <img src="/icons/icon-192.png" alt="">
+  <h1>인터넷이 연결되지 않았어요</h1>
+  <p>와이파이나 데이터를 켠 다음 다시 눌러 줘.</p>
+  <a class="btn" href="">다시 시도</a>
+</div>
+</body>
+</html>
