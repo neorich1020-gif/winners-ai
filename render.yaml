@@ -32,6 +32,10 @@ services:
         sync: false                # 배포할 때 직접 입력 (Claude API 키)
       - key: DEMO_STUDENT_PIN
         sync: false                # 체험 학생 비밀번호 숫자 4자리
+      - key: DIRECTOR_EMAIL
+        sync: false                # 원장님 관리자 화면(/director) 로그인 이메일
+      - key: DIRECTOR_PASSWORD
+        sync: false                # 원장님 관리자 화면 비밀번호 (8자 이상, 처음 한 번 계정 만들 때 사용)
       - key: AI_MODEL
         value: claude-haiku-4-5-20251001
       - key: AI_REPORT_MODEL

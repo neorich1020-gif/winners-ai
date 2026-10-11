@@ -1,7 +1,7 @@
 // 실행 전 준비: PostgreSQL(127.0.0.1:54329, postgres/pw)에 db/schema.sql, db/functions.sql, db/roles.sql 적용 후
 //   node tests/integration.js            (계정 2개 방식)
 //   TEST_DB_URL=<단일 계정 주소> node tests/integration.js   (Render처럼 계정 1개 + node db/setup.js 후)
-// AI는 가짜 응답, 알림톡은 DRY_RUN — 실제 발송·과금 없음 · 통합 테스트 149개
+// AI는 가짜 응답, 알림톡은 DRY_RUN — 실제 발송·과금 없음 · 통합 테스트 190개
 // 주간 상담글 기능 통합 테스트: 실제 PostgreSQL + 실제 서버 + DRY_RUN 발송 (AI만 가짜 응답)
 const crypto = require('crypto');
 Object.assign(process.env, {
@@ -277,7 +277,7 @@ function client() {
   for (const p of ['/student.js', '/offline.html', '/icons/icon-192.png', '/icons/icon-512.png', '/icons/icon-maskable-512.png', '/icons/apple-touch-icon.png']) {
     x = await raw(p); ok(x.status === 200, `파일 제공 ${p}`);
   }
-  x = await raw('/director'); ok(x.status === 200, '/director 접속 시 시연판으로 안내');
+  x = await raw('/director'); ok(x.status === 200, '/director 접속 시 관리자 화면');
 
 
   origLog('\n── 13. 요금제 3종 · 사진 질문 월 한도 · 플랜 변경 ──');
@@ -480,6 +480,68 @@ function client() {
   prompts.length = 0;
   await he('POST', '/api/student/ask', { text: '3x=12 모르겠어요' });
   ok((prompts.at(-1) || '').includes('허용된 힌트는') || (prompts.at(-1) || '').includes('힌트 단계'), '힌트 4단계 방식으로 되돌리면 기존 규칙 적용');
+
+  origLog('\n── 17. 원장님 관리자 화면 (/director) ──');
+  x = await raw('/director'); ok(x.status === 200 && x.text.includes('admin.js') && x.text.includes('멘트윈'), '/director → 실제 관리자 화면');
+  x = await raw('/admin.js'); ok(x.status === 200, '관리자 화면 스크립트 제공');
+  const anon = client();
+  r = await anon('GET', '/api/director/me'); ok(r.status === 401, '로그인 전에는 내 정보 조회 불가');
+  r = await dir('GET', '/api/director/me'); ok(r.status === 200 && r.body.email === 'owner@winners.kr' && r.body.academy.name === '위너스학원', '내 계정·학원 이름 표시', r.body);
+  // 반
+  r = await dir('POST', '/api/director/classes', { name: '', subject: 'math', grade_band: 'middle' }); ok(r.status === 400, '반 이름 없으면 안내', r.body);
+  r = await dir('POST', '/api/director/classes', { name: '고1 수학', subject: 'physics', grade_band: 'high' }); ok(r.status === 400, '없는 과목은 거절');
+  r = await dir('POST', '/api/director/classes', { name: '고1 수학', subject: 'math', grade_band: 'high' });
+  const newCls = r.body.id;
+  ok(r.status === 200 && /\/s\/[0-9a-f]{32}$/.test(r.body.qrUrl), '새 반 만들기 + 반 QR 주소 자동 생성', r.body);
+  r = await dir('PUT', `/api/director/classes/${newCls}`, { name: '고1 수학 심화', subject: 'math', grade_band: 'high' }); ok(r.status === 200, '반 이름 바꾸기');
+  r = await dir('GET', '/api/director/classes');
+  ok(r.status === 200 && r.body.some((c) => c.name === '고1 수학 심화' && c.students === 0) && r.body.some((c) => c.name === '중2 수학 A반' && c.students >= 2), '반 목록 + 반별 학생 수', r.body.map((c) => `${c.name}:${c.students}`));
+  ok(!r.body.some((c) => c.name === '중1 영어'), '다른 학원 반은 안 보임');
+  const qrRes = await fetch(`http://localhost:8099/api/director/classes/${newCls}/qr.png`, { headers: { cookie: (await (async () => { const res = await fetch('http://localhost:8099/api/director/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'owner@winners.kr', password: 'test1234' }) }); return res.headers.getSetCookie()[0].split(';')[0]; })()) } });
+  const qrBuf = Buffer.from(await qrRes.arrayBuffer());
+  ok(qrRes.status === 200 && /image\/png/.test(qrRes.headers.get('content-type')) && qrBuf.slice(1, 4).toString() === 'PNG', `반 QR 인쇄용 PNG (${qrBuf.length} bytes)`);
+  r = await other('GET', `/api/director/classes/${newCls}/qr.png`); ok(r.status === 404, '다른 학원 반 QR은 못 받음');
+  r = await other('PUT', `/api/director/classes/${newCls}`, { name: '해킹', subject: 'math', grade_band: 'high' }); ok(r.status === 404, '다른 학원 반 이름은 못 바꿈');
+  // 학생
+  r = await dir('POST', '/api/director/students', { class_id: newCls, nickname: '지민', login_code: '12345', pin: '1234' }); ok(r.status === 400 && /출석번호/.test(r.body.error), '출석번호 형식 검사');
+  r = await dir('POST', '/api/director/students', { class_id: newCls, nickname: '지민', login_code: '5', pin: '12' }); ok(r.status === 400 && /비밀번호/.test(r.body.error), '비밀번호 4자리 검사');
+  r = await dir('POST', '/api/director/students', { class_id: newCls, nickname: '지민', login_code: '5', pin: '4321', guardian: { phone: '010-2222-3333', consent_confirmed: true } });
+  const jm = r.body.id; ok(r.status === 200 && jm, '학생 등록 (학부모 번호·동의 포함)', r.body);
+  r = await dir('POST', '/api/director/students', { class_id: newCls, nickname: '지민2', login_code: '5', pin: '4321' }); ok(r.status === 409, '같은 반 같은 출석번호는 막음', r.body);
+  r = await dir('GET', '/api/director/students');
+  const jmRow = r.body.find((s) => s.id === jm);
+  ok(jmRow && jmRow.guardianPhone === '010-****-3333' && jmRow.report_ok === true && jmRow.class_name === '고1 수학 심화', '학생 목록: 학부모 번호는 가려서 표시, 동의 완료', jmRow);
+  ok(!JSON.stringify(r.body).includes('22223333') && !r.body.some((s) => 'phone_enc' in s), '목록에 전화번호 원본·암호문 없음');
+  const jmTok = (await dir('GET', '/api/director/classes')).body.find((c) => c.id === newCls).qr_token;
+  r = await client()('POST', '/api/student/login', { token: jmTok, code: '5', pin: '4321' }); ok(r.status === 200, '등록한 학생이 반 QR로 로그인', r.body);
+  r = await dir('PATCH', `/api/director/students/${jm}`, { pin: '99' }); ok(r.status === 400, '잘못된 새 비밀번호는 거절');
+  r = await dir('PATCH', `/api/director/students/${jm}`, { nickname: '지민이', pin: '8888' }); ok(r.status === 200 && r.body.pinChanged, '이름 수정 + 비밀번호 다시 정하기');
+  r = await client()('POST', '/api/student/login', { token: jmTok, code: '5', pin: '4321' }); ok(r.status === 401, '예전 비밀번호로는 로그인 안 됨', r.status);
+  r = await client()('POST', '/api/student/login', { token: jmTok, code: '5', pin: '8888' }); ok(r.status === 200, '새 비밀번호로 로그인');
+  r = await other('PATCH', `/api/director/students/${jm}`, { nickname: '해킹' }); ok(r.status === 404, '다른 학원 학생은 못 고침');
+  r = await dir('PATCH', `/api/director/students/${jm}`, { active: false }); ok(r.status === 200 && r.body.active === false, '퇴원 처리');
+  r = await dir('GET', '/api/director/students'); ok(!r.body.some((s) => s.id === jm), '퇴원생은 목록에서 빠짐');
+  r = await client()('POST', '/api/student/login', { token: jmTok, code: '5', pin: '8888' }); ok(r.status === 401, '퇴원생은 로그인 불가');
+  r = await dir('POST', '/api/director/students', { class_id: newCls, nickname: '새 지민', login_code: '5', pin: '1357' }); ok(r.status === 200, '퇴원생 출석번호는 새 학생이 다시 사용 가능', r.body);
+  // 교재
+  r = await dir('POST', '/api/director/materials', { title: '', content: 'x' }); ok(r.status === 400, '교재 이름 없으면 안내');
+  r = await dir('POST', '/api/director/materials', { title: '쎈 중2-1', class_id: newCls, scope_note: '1단원', content: '일차방정식' });
+  const mat = r.body.id; ok(r.status === 200 && mat, '교재 등록');
+  r = await dir('GET', '/api/director/materials'); ok(r.body.some((m) => m.id === mat && m.class_name === '고1 수학 심화'), '교재 목록에 반 이름 표시');
+  r = await dir('DELETE', `/api/director/materials/${mat}`); ok(r.status === 200, '교재 내리기');
+  r = await dir('GET', '/api/director/materials'); ok(!r.body.some((m) => m.id === mat), '내린 교재는 목록·AI 참고에서 빠짐');
+  // 질문 기록: 학생별 보기
+  r = await dir('GET', `/api/director/monitor/sessions?studentId=${st['민준']}`);
+  ok(r.status === 200 && r.body.length > 0 && r.body.every((s) => s.nickname === '민준' || s.student_id === st['민준']), '질문 기록을 학생별로 보기', r.body[0]);
+  r = await dir('GET', '/api/director/monitor/sessions/not-a-uuid'); ok(r.status === 404 || r.status === 400, '잘못된 기록 주소는 안전하게 거절', r.status);
+  // 비밀번호 변경 · 로그아웃
+  r = await dir('PUT', '/api/director/password', { current: 'wrong-pass', next: 'newpass123' }); ok(r.status === 400, '지금 비밀번호가 틀리면 변경 불가');
+  r = await dir('PUT', '/api/director/password', { current: 'test1234', next: 'short' }); ok(r.status === 400, '새 비밀번호 8자 미만 거절');
+  r = await dir('PUT', '/api/director/password', { current: 'test1234', next: 'newpass123' }); ok(r.status === 200, '비밀번호 변경');
+  r = await client()('POST', '/api/director/login', { email: 'owner@winners.kr', password: 'newpass123' }); ok(r.status === 200, '새 비밀번호로 로그인');
+  await dir('PUT', '/api/director/password', { current: 'newpass123', next: 'test1234' });
+  const lo = client(); await lo('POST', '/api/director/login', { email: 'owner@winners.kr', password: 'test1234' });
+  r = await lo('POST', '/api/director/logout'); r = await lo('GET', '/api/director/me'); ok(r.status === 401, '로그아웃하면 다시 로그인 필요');
 
   origLog('\n── DRY_RUN 미리보기 (민준 학부모님께 갈 카톡) ──\n' + counselLog);
   origLog(`\n결과: 통과 ${pass} / 실패 ${fail}`);

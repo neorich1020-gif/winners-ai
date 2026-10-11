@@ -95,6 +95,26 @@ async function main() {
         console.log(`[setup] 영어 첨삭 체험 주소: ${base}/s/${token}-en`);
       }
     }
+    // 4) 원장님 관리자 계정: DIRECTOR_EMAIL + DIRECTOR_PASSWORD(8자 이상)가 있으면 처음 한 번만 만든다
+    //      (이미 있으면 건드리지 않음 → 관리자 화면에서 바꾼 비밀번호가 유지됨)
+    const dEmail = String(process.env.DIRECTOR_EMAIL || '').trim().toLowerCase();
+    const dPw = String(process.env.DIRECTOR_PASSWORD || '');
+    if (dEmail && dPw) {
+      if (dPw.length < 8 || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(dEmail)) {
+        console.log('[setup] DIRECTOR_EMAIL은 이메일 형식, DIRECTOR_PASSWORD는 8자 이상이어야 합니다. 원장 계정을 만들지 않았습니다.');
+      } else if (!(await c.query('SELECT 1 FROM staff WHERE email=$1', [dEmail])).rows[0]) {
+        const token0 = process.env.DEMO_CLASS_TOKEN || 'winners-demo';
+        // 체험 학원(위너스학원)에 연결, 없으면 가장 먼저 만든 학원
+        const aca = (await c.query('SELECT academy_id AS id FROM classes WHERE qr_token=$1', [token0])).rows[0]
+          || (await c.query('SELECT id FROM academies ORDER BY created_at LIMIT 1')).rows[0];
+        if (aca) {
+          await c.query(`INSERT INTO staff (academy_id, email, password_hash, role) VALUES ($1,$2,$3,'owner')`,
+            [aca.id, dEmail, await bcrypt.hash(dPw, 10)]);
+          console.log(`[setup] 원장님 관리자 계정을 만들었습니다: ${dEmail}`);
+        }
+      }
+    }
+
   } finally {
     await c.query('SELECT pg_advisory_unlock($1)', [LOCK]).catch(() => {});
     c.release();

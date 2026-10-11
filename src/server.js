@@ -86,8 +86,8 @@ app.get('/sw.js', (req, res) => res.set('Cache-Control', 'no-cache').set('Servic
 // 정적 화면: /s/<QR토큰> → 학생 질문창, /director → 원장 대시보드, / → 랜딩
 app.use(express.static(path.join(__dirname, '..', 'public'), { maxAge: '1h' }));
 app.get('/s/:token', (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'student.html')));
-// 원장 대시보드: 실제 화면을 React로 이식하기 전까지는 시연판을 보여 준다 (API는 /api/director/* 에 모두 준비됨)
-app.get('/director', (req, res) => res.redirect('/prototype.html#director'));
+// 원장님 관리자 화면 (시연판 원장 화면은 /prototype.html#director 에 그대로 있음)
+app.get('/director', (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'admin.html')));
 // 주소만 입력하고 들어온 경우: 원장님용 소개(랜딩) 화면으로
 app.get('/', (req, res) => res.redirect('/prototype.html#landing'));
 

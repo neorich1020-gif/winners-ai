@@ -76,3 +76,8 @@ ALTER TABLE question_sessions ADD COLUMN IF NOT EXISTS summary JSONB;
 
 -- 접어 둔 '🔑 결정적 힌트'(힌트 2)를 학생이 펼쳐 봤는지 (원장님 화면·상담글용)
 ALTER TABLE question_sessions ADD COLUMN IF NOT EXISTS hint2_opened BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- ---------- 2026-10 관리자 화면: 퇴원한 학생의 출석번호는 새 학생이 다시 쓸 수 있게 ----------
+-- (재원 중인 학생끼리만 같은 반 출석번호가 겹치지 않으면 됨. 로그인도 재원 학생만 찾음)
+ALTER TABLE students DROP CONSTRAINT IF EXISTS students_class_id_login_code_key;
+CREATE UNIQUE INDEX IF NOT EXISTS students_active_login_code_uq ON students (class_id, login_code) WHERE active;

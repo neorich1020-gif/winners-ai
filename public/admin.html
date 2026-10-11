@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>멘트윈 원장님 화면</title>
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#F6F5F2" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#121317" media="(prefers-color-scheme: dark)">
+<link rel="icon" type="image/png" href="/icons/favicon-32.png">
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<style>
+/* 레이아웃: 왼쪽 메뉴(넓은 화면) / 위쪽 가로 메뉴(휴대폰) + 본문. 표는 가로 스크롤 */
+:root{
+  --bg:#F6F5F2; --surface:#FFFFFF; --ink:#1F2430; --sub:#5E6472; --muted:#9AA0AB; --line:#E8E4DD; --soft:#F1EFEA;
+  --brand:#4F5BD5; --brand-ink:#fff; --brand-soft:#EEF0FE;
+  --ok:#1E9E5E; --ok-soft:#E3F7EC; --warn:#B7791F; --warn-soft:#FFF4DB; --bad:#D93F44; --bad-soft:#FDECEC;
+  --shadow:0 1px 2px rgba(31,36,48,.05), 0 1px 1px rgba(31,36,48,.03);
+  --font:"Pretendard Variable",Pretendard,-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic",sans-serif;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#121317; --surface:#1C1E25; --ink:#ECEDF1; --sub:#B4B8C2; --muted:#7D8290; --line:#2A2D36; --soft:#23262E;
+  --brand:#7C86F0; --brand-soft:#262A47; --ok:#3CCB84; --ok-soft:#173326; --warn:#E6B04A; --warn-soft:#3A2F17; --bad:#FF6B70; --bad-soft:#3A1E21;
+}}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font);font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer;border:0;background:none}
+[hidden]{display:none!important}
+a{color:var(--brand)}
+.app{display:grid;grid-template-columns:220px minmax(0,1fr);min-height:100vh}
+.side{position:sticky;top:0;height:100vh;padding:20px 14px;border-right:1px solid var(--line);background:var(--surface);display:flex;flex-direction:column;gap:4px}
+.brand{font-weight:800;font-size:19px;letter-spacing:-.02em;padding:4px 10px 2px}
+.brand small{display:block;font-size:12.5px;font-weight:500;color:var(--sub);letter-spacing:0}
+.side nav{display:flex;flex-direction:column;gap:2px;margin-top:14px}
+.side nav button{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;font-weight:600;color:var(--sub);text-align:left}
+.side nav button[aria-current="true"]{background:var(--brand-soft);color:var(--brand)}
+.side nav .badge{margin-left:auto;background:var(--bad);color:#fff;border-radius:999px;font-size:11.5px;padding:0 7px;line-height:20px}
+.side .foot{margin-top:auto;font-size:13px;color:var(--sub);padding:8px 10px;display:flex;flex-direction:column;gap:6px}
+.main{padding:28px 32px 60px;min-width:0;max-width:1180px}
+h1{font-size:24px;margin:0 0 4px;letter-spacing:-.02em}
+h2{font-size:17px;margin:0 0 12px}
+.lead{color:var(--sub);margin:0 0 20px}
+.grid{display:grid;gap:16px}
+.g4{grid-template-columns:repeat(4,minmax(0,1fr))}
+.g2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px;min-width:0;box-shadow:var(--shadow)}
+.stat b{display:block;font-size:26px;font-weight:800;letter-spacing:-.02em}
+.stat span{color:var(--sub);font-size:13.5px}
+.row-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.row-head h2{margin:0}
+.row-head .sp{flex:1}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:9px 14px;border-radius:10px;background:var(--brand);color:var(--brand-ink);font-weight:700;font-size:14px;white-space:nowrap}
+.btn.ghost{background:var(--surface);color:var(--ink);box-shadow:inset 0 0 0 1px var(--line)}
+.btn.small{padding:6px 10px;font-size:13px;border-radius:8px}
+.btn.danger{background:var(--bad-soft);color:var(--bad)}
+.btn:disabled{opacity:.5;cursor:default}
+.pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:700;background:var(--soft);color:var(--sub);white-space:nowrap}
+.pill.ok{background:var(--ok-soft);color:var(--ok)} .pill.warn{background:var(--warn-soft);color:var(--warn)} .pill.bad{background:var(--bad-soft);color:var(--bad)} .pill.brand{background:var(--brand-soft);color:var(--brand)}
+.tbl{width:100%;overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{text-align:left;font-size:12.5px;color:var(--sub);font-weight:700;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:10px;border-bottom:1px solid var(--line);vertical-align:top}
+tr.click{cursor:pointer} tr.click:hover td{background:var(--soft)}
+.note{color:var(--sub);font-size:13px}
+.f{display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:600;color:var(--sub);min-width:0}
+.f input,.f select,.f textarea{border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:9px 11px;font-size:15px;font-weight:400;color:var(--ink);width:100%}
+.f textarea{min-height:90px;resize:vertical;line-height:1.6}
+.f input:focus,.f select:focus,.f textarea:focus{outline:2px solid var(--brand-soft);border-color:var(--brand)}
+.form{display:grid;gap:12px;align-content:start}
+.form.two{grid-template-columns:repeat(2,minmax(0,1fr))}
+.check{display:flex;gap:8px;align-items:flex-start;font-size:14px;color:var(--ink);font-weight:500}
+.check input{margin-top:4px}
+.msg{font-size:13.5px;margin:6px 0 0;min-height:1em}
+.msg.err{color:var(--bad)} .msg.ok{color:var(--ok)}
+.empty{padding:26px;text-align:center;color:var(--sub);font-size:14px}
+.bar-row{display:grid;grid-template-columns:120px minmax(0,1fr) auto;gap:10px;align-items:center;font-size:13.5px;margin-bottom:8px}
+.bar{height:8px;background:var(--soft);border-radius:999px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--brand);border-radius:999px}
+.bar i.hard{background:var(--warn)}
+.alert{display:flex;gap:12px;align-items:center;flex-wrap:wrap;background:var(--bad-soft);border:1px solid color-mix(in srgb,var(--bad) 30%,transparent);border-radius:12px;padding:12px 14px;margin-bottom:10px}
+.alert .sp{flex:1}
+.notes li{margin-bottom:8px}
+.cls{display:flex;flex-direction:column;gap:8px}
+.cls .url{font-size:12.5px;color:var(--sub);word-break:break-all;background:var(--soft);border-radius:8px;padding:6px 8px}
+.acts{display:flex;gap:6px;flex-wrap:wrap}
+/* 대화·편집 창 */
+.scrim{position:fixed;inset:0;background:rgba(15,17,22,.45);display:flex;justify-content:flex-end;z-index:20}
+.panel{width:min(560px,100%);height:100%;background:var(--surface);padding:22px;overflow-y:auto;display:flex;flex-direction:column;gap:12px;box-shadow:-10px 0 30px rgba(0,0,0,.12)}
+.panel .top{display:flex;align-items:center;gap:10px}
+.panel .top h2{margin:0;flex:1}
+.bub{padding:10px 13px;border-radius:14px;white-space:pre-wrap;word-break:keep-all;overflow-wrap:anywhere;font-size:14px;max-width:92%}
+.bub.student{align-self:flex-end;background:var(--brand);color:#fff}
+.bub.ai{align-self:flex-start;background:var(--soft)}
+.bub.flag{outline:2px solid var(--bad)}
+.sumcard{background:var(--warn-soft);border-radius:12px;padding:12px 14px;font-size:14px}
+.sumcard b{display:inline-block;min-width:92px;color:var(--sub);font-weight:700}
+.editor textarea{min-height:300px}
+.warnlist{margin:0;padding-left:18px;color:var(--warn);font-size:13.5px}
+.counter{font-size:12.5px;color:var(--sub);text-align:right}
+.counter.over{color:var(--bad);font-weight:700}
+.flow{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.flow span{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:6px 12px;font-size:13.5px}
+.flow b{margin-right:4px}
+.kw input{min-width:160px}
+.plans{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.plan{border:1px solid var(--line);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:8px;background:var(--surface)}
+.plan.cur{border-color:var(--brand);box-shadow:0 0 0 2px var(--brand-soft)}
+.plan .price{font-size:22px;font-weight:800}
+.plan ul{margin:0;padding-left:18px;font-size:13.5px;color:var(--sub)}
+.plan .soon{color:var(--muted)}
+.meter{height:10px;background:var(--soft);border-radius:999px;overflow:hidden;margin:6px 0 2px}
+.meter i{display:block;height:100%;background:var(--brand)}
+.meter.full i{background:var(--warn)} .meter.over i{background:var(--bad)}
+.radio{display:flex;flex-direction:column;gap:8px}
+.radio label{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--line);border-radius:12px;padding:12px;font-size:14px;cursor:pointer}
+.radio label:has(input:checked){border-color:var(--brand);background:var(--brand-soft)}
+.radio b{display:block}
+/* 로그인 */
+.login{min-height:100vh;display:grid;place-items:center;padding:20px}
+.login .card{width:min(400px,100%);padding:28px}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:12px;font-size:14px;z-index:30;box-shadow:0 8px 24px rgba(0,0,0,.2)}
+@media (max-width:900px){
+  .app{grid-template-columns:minmax(0,1fr)}
+  .side{position:sticky;height:auto;flex-direction:row;align-items:center;padding:10px 12px;border-right:0;border-bottom:1px solid var(--line);z-index:5;overflow-x:auto;gap:8px}
+  .brand{white-space:nowrap;padding:0 6px 0 0}.brand small{display:none}
+  .side nav{flex-direction:row;margin:0}
+  .side nav button{white-space:nowrap;padding:8px 10px}
+  .side .foot{margin:0 0 0 auto;padding:0;border:0} .side .foot #me-email{display:none} .side .foot button{white-space:nowrap}
+  #ss-table td,#st-table td,#fb-table td{white-space:nowrap} #cs-table td{min-width:110px}
+  .main{padding:18px 16px 50px}
+  .g4{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .g2,.plans,.form.two{grid-template-columns:minmax(0,1fr)}
+}
+</style>
+</head>
+<body>
+<section class="login" id="login" hidden>
+  <form class="card form" id="login-form">
+    <div class="brand" style="padding:0">멘트윈<small>원장님 관리자 화면</small></div>
+    <label class="f">이메일<input id="lg-email" type="email" autocomplete="username" required></label>
+    <label class="f">비밀번호<input id="lg-pw" type="password" autocomplete="current-password" required></label>
+    <button class="btn" type="submit">로그인</button>
+    <p class="msg err" id="lg-err" role="alert"></p>
+    <p class="note">계정이 없으면 서버 설정(Render Environment)에 DIRECTOR_EMAIL과 DIRECTOR_PASSWORD를 넣어 주세요.</p>
+  </form>
+</section>
+
+<div class="app" id="app" hidden>
+  <aside class="side">
+    <div class="brand">멘트윈<small id="acad-name"></small></div>
+    <nav id="nav" aria-label="메뉴">
+      <button data-view="home" aria-current="true">🏠 오늘 현황<span class="badge" id="flag-badge" hidden></span></button>
+      <button data-view="sessions">💬 질문 기록</button>
+      <button data-view="students">👩‍🎓 반·학생</button>
+      <button data-view="counsel">✉️ 주간 상담</button>
+      <button data-view="feedback">✍️ 첨삭 기록</button>
+      <button data-view="settings">⚙️ 설정</button>
+      <button data-view="billing">💳 요금</button>
+    </nav>
+    <div class="foot"><span id="me-email"></span><button class="btn ghost small" id="logout">로그아웃</button></div>
+  </aside>
+
+  <main class="main">
+    <!-- 오늘 현황 -->
+    <section id="v-home">
+      <h1>오늘 현황</h1>
+      <p class="lead">최근 7일 동안 학생들이 멘트윈에 물어본 내용이에요.</p>
+      <div id="flags"></div>
+      <div class="grid g4" id="stats"></div>
+      <div class="grid g2" style="margin-top:16px">
+        <div class="card"><h2>많이 막힌 단원</h2><div id="topics"></div><p class="note">막대 = 질문 수, 숫자 = 평균 힌트 단계</p></div>
+        <div class="card"><h2>선생님 노트 <span class="note">학생이 헷갈려 한 개념·코칭 메모</span></h2><ul class="notes" id="notes" style="padding-left:18px;margin:0"></ul></div>
+      </div>
+    </section>
+
+    <!-- 질문 기록 -->
+    <section id="v-sessions" hidden>
+      <div class="row-head"><h1>질문 기록</h1><span class="sp"></span>
+        <label class="f" style="flex-direction:row;align-items:center;gap:8px;white-space:nowrap">학생<select id="ss-student"><option value="">전체</option></select></label></div>
+      <p class="lead">줄을 누르면 대화 전체와 튜터 요약을 볼 수 있어요. 열람 기록이 남아요.</p>
+      <div class="card tbl"><table id="ss-table"></table></div>
+    </section>
+
+    <!-- 반·학생 -->
+    <section id="v-students" hidden>
+      <div class="row-head"><h1>반·학생</h1><span class="sp"></span><button class="btn ghost" id="add-class">+ 반 만들기</button><button class="btn" id="add-student">+ 학생 등록</button></div>
+      <p class="lead">반마다 질문방 주소(QR)가 하나씩 있어요. 학생은 그 주소에서 출석번호 + 비밀번호 4자리로 들어와요.</p>
+      <div class="grid g2" id="classes" style="margin-bottom:16px"></div>
+      <div class="card tbl"><table id="st-table"></table></div>
+    </section>
+
+    <!-- 주간 상담 -->
+    <section id="v-counsel" hidden>
+      <div class="row-head"><h1>주간 상담</h1><span class="sp"></span>
+        <button class="btn ghost" id="bulk-gen">키워드 있는 학생 일괄 생성</button><button class="btn" id="bulk-ok">초안 모두 승인</button></div>
+      <p class="lead" id="cs-lead"></p>
+      <div class="flow" id="cs-flow"></div>
+      <div class="card tbl"><table id="cs-table"></table></div>
+      <p class="note">키워드(학습 상태·수업 태도)를 적고 칸을 벗어나면 자동 저장돼요. 승인한 글만 학부모님께 발송돼요.</p>
+    </section>
+
+    <!-- 첨삭 기록 -->
+    <section id="v-feedback" hidden>
+      <h1>첨삭 기록</h1>
+      <p class="lead">학생이 올린 영어 영작·수학 풀이와 고친 표현 전체예요. 학생에게는 힌트 → 고쳐 쓰기 → 공개 순서로 보여 줬어요.</p>
+      <div class="card" id="fb-week" style="margin-bottom:16px"></div>
+      <div class="card tbl"><table id="fb-table"></table></div>
+    </section>
+
+    <!-- 설정 -->
+    <section id="v-settings" hidden>
+      <h1>설정</h1>
+      <p class="lead">튜터의 지도 방식과 말투, 학부모 발송 시각, 이번 주 교재를 정해요.</p>
+      <div class="grid g2">
+        <form class="card form" id="mode-form">
+          <h2>지도 방식</h2>
+          <div class="radio">
+            <label><input type="radio" name="mode" value="key_hint"><span><b>멘트윈 핵심 힌트형</b><span class="note">개념 퀴즈 → 해결 흐름 3단계 → 접어 둔 결정적 힌트(도식·비유). 학생이 풀어 내면 오답노트 인증.</span></span></label>
+            <label><input type="radio" name="mode" value="hint_ladder"><span><b>힌트 4단계형</b><span class="note">"힌트 하나 더"를 누를 때마다 한 단계씩. 정답은 끝까지 학생이 써요.</span></span></label>
+          </div>
+          <button class="btn" type="submit">지도 방식 저장</button><p class="msg" id="mode-msg"></p>
+        </form>
+        <form class="card form" id="persona-form">
+          <h2>튜터 말투</h2>
+          <label class="f">학생들이 부르는 호칭<input id="p-name" maxlength="20"></label>
+          <label class="f">말투 설명<textarea id="p-style" maxlength="800"></textarea></label>
+          <label class="f">평소 자주 하시는 말 (한 줄에 하나)<textarea id="p-examples" maxlength="2000"></textarea></label>
+          <button class="btn" type="submit">말투 저장</button><p class="msg" id="persona-msg"></p>
+        </form>
+        <form class="card form" id="report-form">
+          <h2>학부모 주간 상담 발송</h2>
+          <div class="form two">
+            <label class="f">발송 요일<select id="r-day"><option value="1">월요일</option><option value="2">화요일</option><option value="3">수요일</option><option value="4">목요일</option><option value="5">금요일</option><option value="6">토요일</option><option value="0">일요일</option></select></label>
+            <label class="f">발송 시각<input id="r-time" type="time" step="1800"></label>
+          </div>
+          <label class="f">상담글 말투<textarea id="p-counsel" maxlength="600"></textarea></label>
+          <label class="f">상담글 서명<input id="p-sign" maxlength="60"></label>
+          <label class="check"><input type="checkbox" id="r-enabled"> 주간 발송 켜기</label>
+          <label class="check"><input type="checkbox" id="r-fallback"> 승인한 상담글이 없는 학생은 자동 학습 리포트로 대신 보내기</label>
+          <button class="btn" type="submit">발송 설정 저장</button><p class="msg" id="report-msg"></p>
+        </form>
+        <div class="card form">
+          <h2>이번 주 교재·진도</h2>
+          <p class="note" style="margin:0">튜터가 이번 주 범위 안에서 설명하도록 핵심 원칙만 적어 주세요. 교재 원문 전체를 붙여 넣지는 마세요(저작권).</p>
+          <form class="form" id="mat-form">
+            <label class="f">반<select id="m-class"><option value="">모든 반</option></select></label>
+            <label class="f">교재·단원<input id="m-title" maxlength="80" placeholder="예: 개념원리 중2-1 · Ⅲ. 일차함수"></label>
+            <label class="f">이번 주 범위<input id="m-scope" maxlength="200" placeholder="예: 기울기와 y절편 (p.112~131)"></label>
+            <label class="f">튜터가 지킬 풀이 원칙<textarea id="m-content" maxlength="8000" placeholder="예: 기울기는 (y의 증가량)/(x의 증가량)으로 설명. 평행이동은 다음 주 진도."></textarea></label>
+            <button class="btn" type="submit">교재 추가</button><p class="msg" id="mat-msg"></p>
+          </form>
+          <div id="mat-list"></div>
+        </div>
+        <form class="card form" id="academy-form">
+          <h2>학원 정보</h2>
+          <label class="f">학원명<input id="a-name" maxlength="40"></label>
+          <label class="f">원장님 성함 (상담글·튜터가 쓰는 이름)<input id="a-dir" maxlength="20"></label>
+          <label class="f">대표번호 (알림톡 실패 시 문자 발신번호)<input id="a-phone" inputmode="tel" maxlength="13"></label>
+          <button class="btn" type="submit">학원 정보 저장</button><p class="msg" id="academy-msg"></p>
+        </form>
+        <form class="card form" id="pw-form">
+          <h2>비밀번호 바꾸기</h2>
+          <label class="f">지금 비밀번호<input id="pw-cur" type="password" autocomplete="current-password"></label>
+          <label class="f">새 비밀번호 (8자 이상)<input id="pw-new" type="password" autocomplete="new-password" minlength="8"></label>
+          <button class="btn" type="submit">비밀번호 바꾸기</button><p class="msg" id="pw-msg"></p>
+        </form>
+      </div>
+    </section>
+
+    <!-- 요금 -->
+    <section id="v-billing" hidden>
+      <h1>요금</h1>
+      <p class="lead" id="bl-lead"></p>
+      <div class="grid g2" style="margin-bottom:16px" id="bl-usage"></div>
+      <div class="plans" id="bl-plans"></div>
+      <p class="msg" id="bl-msg"></p>
+    </section>
+  </main>
+</div>
+
+<!-- 오른쪽에서 열리는 창 (대화 보기 / 학생 등록·수정 / 반 / 상담글 편집) -->
+<div class="scrim" id="drawer" hidden><div class="panel" role="dialog" aria-modal="true" id="drawer-panel"></div></div>
+<div class="toast" id="toast" hidden role="status"></div>
+
+<script src="/admin.js"></script>
+</body>
+</html>

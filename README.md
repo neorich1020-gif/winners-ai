@@ -48,7 +48,7 @@ Render **New → Blueprint**로 이 저장소를 연결하면 끝납니다. 자�
 2. `.env.example` → `.env` 복사 후 값 채우기 (`openssl rand -base64 32` 등으로 보안 키 생성)
 3. `npm install` → `npm run db:setup` (테이블·학원 분리 자동) — 계정 2개 방식이면 `npm run db:init` 후 `db/roles.sql`
 4. `npm run report:dry-run` 으로 알림톡 실제 발송 없이 리포트 미리보기
-5. `npm start` → `/director`(원장), `/s/<QR토큰>`(학생)
+5. `npm start` → `/director`(원장 관리자 화면 · `public/admin.html`), `/s/<QR토큰>`(학생). 첫 원장 계정은 환경변수 `DIRECTOR_EMAIL`·`DIRECTOR_PASSWORD`(8자 이상)로 자동 생성
 6. 실서비스 전 `DRY_RUN=0`, 토스 키를 `live_`로 교체
 
 ## 요금제 (DB `plans` 표가 기준, 결제 금액도 여기서)
@@ -103,6 +103,5 @@ Render **New → Blueprint**로 이 저장소를 연결하면 끝납니다. 자�
 | 일괄 생성 / 일괄 승인 | `POST /bulk/generate`, `/bulk/approve` |
 
 ## 아직 MVP에 없는 것 (2단계)
-- 실제 원장 화면 — `public/prototype.html` 시연판 디자인을 보고 이식 (API는 모두 준비됨, 지금 `/director`는 시연판으로 연결). 학생 화면은 완성
 - 원장 회원가입/비밀번호 재설정, 강사 계정 초대
 - 학부모 수신동의 온라인 페이지 (현재는 원장님이 종이 동의서 확인 후 체크)
