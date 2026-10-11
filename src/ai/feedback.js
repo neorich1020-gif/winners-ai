@@ -261,7 +261,7 @@ function readInput({ text, image }) {
   if (!img && !typed) throw Object.assign(new Error('쓴 글을 붙여 넣거나 📷 사진으로 올려 줘!'), { status: 400 });
   if (typed.length > MAX_TEXT) throw Object.assign(new Error(`글이 너무 길어! ${MAX_TEXT}자 안으로 나눠서 보내 줘.`), { status: 400 });
   if (/(시스템\s*프롬프트|이전\s*(지시|명령).*무시|ignore (all|previous) instructions)/i.test(typed)) {
-    throw Object.assign(new Error('그건 도와줄 수 없어. 직접 쓴 글이나 풀이를 올려 줘!'), { status: 400 });
+    throw Object.assign(new Error('그 얘기는 잠깐 넘어가고, 직접 쓴 글이나 풀이를 올려 줘!'), { status: 400 });
   }
   return { img, typed };
 }
