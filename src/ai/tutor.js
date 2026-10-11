@@ -117,17 +117,20 @@ async function answer(client, { academy, cls, student, sessionId, text, wantMore
 
   const saved = (await client.query(
     'INSERT INTO messages (academy_id, session_id, role, content, verdict) VALUES ($1,$2,$3,$4,$5) RETURNING id',
-    [academy.id, session.id, 'ai', out.text, out.leaked ? 'hint_leak_blocked' : out.verdict])).rows[0];
+    // 접어 둔 힌트 2도 대화 기록에는 함께 남긴다 (다음 답변에서 튜터가 이미 준 힌트를 알 수 있게, 원장님 모니터링용)
+    [academy.id, session.id, 'ai', out.hint2 ? `${out.text}\n\n[🔑 결정적 힌트 · 접어 둠]\n${out.hint2}` : out.text,
+     out.leaked ? 'hint_leak_blocked' : out.verdict])).rows[0];
 
   if (out.topic) await client.query('UPDATE question_sessions SET topic=COALESCE(topic,$1) WHERE id=$2', [out.topic, session.id]);
   // 학생에게 보이지 않는 요약(막힌 부분·코칭 메모·학부모 칭찬 한 줄) → 원장님 화면과 금요일 상담글 초안에 사용
-  if (summary) await client.query('UPDATE question_sessions SET summary=$1 WHERE id=$2', [JSON.stringify(summary), session.id]);
+  // hint2_opened는 튜터가 아니라 시스템이 기록한 값(학생이 실제로 펼쳤는지)을 그대로 이어 붙인다
+  if (summary) await client.query("UPDATE question_sessions SET summary = $1::jsonb || jsonb_build_object('hint2_opened', hint2_opened) WHERE id=$2", [JSON.stringify(summary), session.id]);
   if (out.verdict === 'safety') {
     await client.query("UPDATE question_sessions SET status='flagged' WHERE id=$1", [session.id]);
     await client.query('INSERT INTO safety_flags (academy_id, student_id, message_id, category) VALUES ($1,$2,$3,$4)',
       [academy.id, student.id, saved.id, 'wellbeing']);
   }
-  return { sessionId: session.id, hintLevel: session.hint_level, reply: out.text, safety: out.verdict === 'safety', withImage: !!img, photo,
+  return { sessionId: session.id, hintLevel: session.hint_level, reply: out.text, hint2: out.hint2 || null, safety: out.verdict === 'safety', withImage: !!img, photo,
     teachingMode: keyHint ? 'key_hint' : 'hint_ladder' };
 }
 

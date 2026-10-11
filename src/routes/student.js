@@ -114,6 +114,18 @@ r.post('/feedback/:id/reveal', requireAuth('student'), async (req, res, next) =>
   } catch (e) { next(e); }
 });
 
+// 학생이 접어 둔 '🔑 결정적 힌트'를 펼침 → 기록 (힌트 2를 열어 본 문제 수가 원장님 화면·상담글에 반영)
+r.post('/session/:id/hint2', requireAuth('student'), async (req, res, next) => {
+  try {
+    if (!/^[0-9a-f-]{36}$/i.test(req.params.id)) return res.status(404).json({ error: '없는 문제예요' });
+    await withTenant(req.user.aid, (c) => c.query(
+      `UPDATE question_sessions SET hint2_opened=TRUE,
+              summary = CASE WHEN summary IS NULL THEN NULL ELSE summary || '{"hint2_opened": true}'::jsonb END
+        WHERE id=$1 AND student_id=$2`, [req.params.id, req.user.sub]));
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
 // 학생이 "풀었어요!" / "포기" 버튼
 r.post('/session/:id/close', requireAuth('student'), async (req, res) => {
   const status = req.body?.solved ? 'solved' : 'gave_up';

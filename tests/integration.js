@@ -1,7 +1,7 @@
 // 실행 전 준비: PostgreSQL(127.0.0.1:54329, postgres/pw)에 db/schema.sql, db/functions.sql, db/roles.sql 적용 후
 //   node tests/integration.js            (계정 2개 방식)
 //   TEST_DB_URL=<단일 계정 주소> node tests/integration.js   (Render처럼 계정 1개 + node db/setup.js 후)
-// AI는 가짜 응답, 알림톡은 DRY_RUN — 실제 발송·과금 없음 · 통합 테스트 147개
+// AI는 가짜 응답, 알림톡은 DRY_RUN — 실제 발송·과금 없음 · 통합 테스트 149개
 // 주간 상담글 기능 통합 테스트: 실제 PostgreSQL + 실제 서버 + DRY_RUN 발송 (AI만 가짜 응답)
 const crypto = require('crypto');
 Object.assign(process.env, {
@@ -35,7 +35,7 @@ Module._load = function (req, ...rest) {
         if (last.includes('2x = 8')) {
           return { content: [{ type: 'text', text: '[CHECK]\n[TOPIC: 일차방정식]\n맞아! 2x = 8 이니까 x = 4 정답이야.\n자 그럼 풀이 흐름이 이해됐지? 여기까지 작성한 내용을 오답노트에 적어서 인증해줘!\n<<SUMMARY>>{"subject":"수학","topic":"일차방정식","weakness_point":"이항할 때 부호","math_wrong_note_assigned":true,"director_note":"이항 부호 연습 3문제 더","parent_cheering_msg":"막힌 줄을 정확히 짚어 질문했어요"}<<END>>' }] };
         }
-        return { content: [{ type: 'text', text: '[HINT]\n[TOPIC: 일차방정식]\n📌 핵심 개념 퀴즈\n저울 양쪽에 같은 무게를 빼도 저울은 기울지 않을까?\n🧭 힌트 1 · 해결 흐름 3단계\n1단계: 등식의 성질\n2단계: 양변에서 같은 수를 빼서 x 쪽만 남기기\n3단계: x 앞의 숫자로 양변 나누기\n여기에서 혹시 헷갈리거나 모르는 개념이 있다면 편하게 말해줄래? 윤원장님 노트에 저장해 둘게!\n<<SUMMARY>>{"subject":"수학","topic":"일차방정식","weakness_point":"이항할 때 부호","math_wrong_note_assigned":false,"director_note":"이항 부호 연습 3문제 더","parent_cheering_msg":"막힌 줄을 정확히 짚어 질문했어요"}<<END>>' }] };
+        return { content: [{ type: 'text', text: '[HINT]\n[TOPIC: 일차방정식]\n📌 핵심 개념 퀴즈\n저울 양쪽에 같은 무게를 빼도 저울은 기울지 않을까?\n🧭 힌트 1 · 해결 흐름 3단계\n1단계: 등식의 성질\n2단계: 양변에서 같은 수를 빼서 x 쪽만 남기기\n3단계: x 앞의 숫자로 양변 나누기\n여기에서 혹시 헷갈리거나 모르는 개념이 있다면 편하게 말해줄래? 선생님 노트에 저장해 둘게!\n🔑 힌트 2 · 결정적 힌트\n<<HINT2>>\n[2x] + 3 ---> 11\n저울에서 추 3개를 양쪽에서 똑같이 빼 봐!\n<<END_HINT2>>\n<<SUMMARY>>{"subject":"수학","topic":"일차방정식","weakness_point":"이항할 때 부호","math_wrong_note_assigned":false,"director_note":"이항 부호 연습 3문제 더","parent_cheering_msg":"막힌 줄을 정확히 짚어 질문했어요"}<<END>>' }] };
       }
       return { content: [{ type: 'text', text: '[HINT]\n[TOPIC: 일차방정식]\n민준아, 어디까지 해 봤어?' }] };
     } }; } };
@@ -444,20 +444,23 @@ function client() {
   r = await he('POST', '/api/student/ask', { text: '2x+3=11 어떻게 풀어요?' });
   const kp = prompts.at(-1) || '';
   ok(r.status === 200 && r.body.teachingMode === 'key_hint', '핵심 힌트형으로 답변', r.body);
-  ok(kp.includes('멘트윈 1:1 학습 튜터') && kp.includes('📌 핵심 개념 퀴즈') && kp.includes('🧭 힌트 1 · 해결 흐름 3단계') && kp.includes('🔑 힌트 2 · 결정적 단서'), '프롬프트: 3칸 매트릭스(퀴즈·흐름 3단계·결정적 단서)');
+  ok(kp.includes('멘트윈 1:1 학습 튜터') && kp.includes('📌 핵심 개념 퀴즈') && kp.includes('🧭 힌트 1 · 해결 흐름 3단계') && kp.includes('🔑 힌트 2 · 결정적 힌트 (접어 두기)'), '프롬프트: 3칸 매트릭스(퀴즈·흐름 3단계·결정적 단서)');
   ok(kp.includes('완성된 전체 계산 풀이를 바로 주지 않는다') && kp.includes('여기까지 작성한 내용을 오답노트에 적어서 인증해줘!'), '프롬프트: 수학은 완성 풀이 대신 흐름 → 풀어 내면 오답노트 인증');
-  ok(kp.includes('노트에 저장해 둘게!') && kp.includes('초등학생도 한 번에 이해할 수 있는'), '프롬프트: 모르는 개념 점검 질문 + 중등은 초등 눈높이 비유');
-  ok(kp.includes('처음 답변에는 힌트 2를 넣지 않는다'), '첫 답변엔 힌트 2(결정적 단서)는 아껴 둠');
-  ok(kp.includes('[ ]') && kp.includes('핵심 개념 퀴즈 1개 + 해결 흐름 3단계 힌트만') && kp.includes('몇 번 문제(어느 지문)부터 풀어볼까?'), '프롬프트: 영어는 문제 번호 먼저 묻고 → 퀴즈 + 흐름 3단계 (S/V·[핵심] 활용)');
+  ok(kp.includes('선생님 노트에 저장해 둘게!') && !kp.includes('윤원장') && kp.includes('초등학생도 한 번에 이해할 수 있는'), '프롬프트: "선생님 노트" 점검 질문 + 중등은 초등 눈높이 비유');
+  ok(kp.includes('<<HINT2>>') && kp.includes('---> 등'), '프롬프트: 힌트 2(도식·비유)는 접어 둘 칸에 따로');
+  ok(kp.includes('[ ]') && kp.includes('핵심 개념 퀴즈 1개 + 해결 흐름 3단계 + 접어 둔 도식/비유 힌트') && kp.includes('몇 번 문제(어느 지문)부터 풀어볼까?'), '프롬프트: 영어는 문제 번호 먼저 묻고 → 퀴즈 + 흐름 3단계 (S/V·[핵심] 활용)');
   ok(kp.includes('기술적 용어를 쓰지 않는다') && kp.includes('속이지 않고') && kp.includes('기를 꺾는 거절 표현은 쓰지 않는다') && kp.includes('"subject"'), '기술 용어·기 꺾는 거절 금지, 진지하게 물으면 솔직하게, 요약에 과목 포함');
-  ok(r.body.reply.includes('📌 핵심 개념 퀴즈') && r.body.reply.includes('노트에 저장해 둘게'), '학생에게 퀴즈 + 흐름 3단계 + 개념 점검 질문 전달', r.body.reply);
+  ok(r.body.reply.includes('📌 핵심 개념 퀴즈') && r.body.reply.includes('선생님 노트에 저장해 둘게'), '학생에게 퀴즈 + 흐름 3단계 + 개념 점검 질문 전달', r.body.reply);
+  ok(!r.body.reply.includes('---> 11') && !r.body.reply.includes('HINT2') && r.body.hint2?.includes('[2x] + 3 ---> 11'), '결정적 힌트는 본문과 분리해 접어 둘 칸으로 전달', r.body);
   ok(!r.body.reply.includes('SUMMARY') && !r.body.reply.includes('weakness'), '요약 데이터는 학생 화면에 안 보임');
   const sm = (await admin.query('SELECT summary FROM question_sessions WHERE id=$1', [r.body.sessionId])).rows[0].summary;
   ok(sm?.weakness_point === '이항할 때 부호' && sm.subject === '수학' && sm.math_wrong_note_assigned === false && sm.parent_cheering_msg, '요약(과목·막힌 부분·칭찬 한 줄)은 DB에 저장, 아직 오답노트 지시 전', sm);
   const sidKH = r.body.sessionId;
-  prompts.length = 0;
-  r = await he('POST', '/api/student/ask', { text: '결정적 힌트 주세요', sessionId: sidKH, moreHint: true });
-  ok((prompts.at(-1) || '').includes('이번 답변에서 힌트 2를 준다'), '🔑 결정적 힌트 버튼 → 힌트 2(비유·도식) 허용');
+  r = await he('POST', `/api/student/session/${sidKH}/hint2`, {});
+  const h2 = (await admin.query('SELECT hint2_opened, summary FROM question_sessions WHERE id=$1', [sidKH])).rows[0];
+  ok(r.status === 200 && h2.hint2_opened === true && h2.summary.hint2_opened === true, '학생이 결정적 힌트를 펼치면 기록 (요약에 hint2_opened)', h2);
+  r = await fm('POST', `/api/student/session/${sidKH}/hint2`, {});
+  ok(r.status === 200, '다른 학생 요청은 아무 것도 바꾸지 못함 (조용히 무시)');
   r = await he('POST', '/api/student/ask', { text: '2x = 8 이니까 x = 4요', sessionId: sidKH });
   ok(r.body.reply.includes('x = 4') && r.body.reply.includes('오답노트에 적어서 인증해줘'), '학생이 풀어 내면 정답 확인 + 오답노트 인증 지시 (확인 답변은 정답 가리기 안 함)', r.body.reply);
   const sm2 = (await admin.query('SELECT summary FROM question_sessions WHERE id=$1', [sidKH])).rows[0].summary;
@@ -472,7 +475,7 @@ function client() {
   prompts.length = 0;
   r = await dir('POST', `/api/director/counsel/${hid}/generate`);
   const cp3 = prompts.find((x) => x.includes('주간 상담 카카오톡 메시지')) || '';
-  ok(r.status === 200 && cp3.includes('막혔던 부분: 이항할 때 부호') && cp3.includes('칭찬 포인트: 막힌 줄을') && cp3.includes('오답노트 작성 지시 1회'), '금요일 상담글 초안에 튜터 요약 자동 반영', r.body.error || cp3.match(/튜터[^\n]*/)?.[0]);
+  ok(r.status === 200 && cp3.includes('막혔던 부분: 이항할 때 부호') && cp3.includes('칭찬 포인트: 막힌 줄을') && cp3.includes('오답노트 작성 지시 1회') && cp3.includes('결정적 힌트를 펼쳐 본 문제 1개'), '금요일 상담글 초안에 튜터 요약 자동 반영', r.body.error || cp3.match(/튜터[^\n]*/)?.[0]);
   await dir('PUT', '/api/director/persona', { ...pr, teaching_mode: 'hint_ladder' });
   prompts.length = 0;
   await he('POST', '/api/student/ask', { text: '3x=12 모르겠어요' });

@@ -12,8 +12,8 @@
   let teachingMode = 'hint_ladder';
   const keyHint = () => teachingMode === 'key_hint';
   function applyMode() {
-    // 핵심 힌트형은 단계 표시가 필요 없고, "힌트 하나 더" 대신 "결정적 힌트"(힌트 2: 비유·도식)
-    $('#more-hint').textContent = keyHint() ? '🔑 결정적 힌트' : '💡 힌트 하나 더';
+    // 핵심 힌트형은 단계 표시가 필요 없고, "힌트 하나 더" 대신 "다시 쉽게 설명해 줘" (결정적 힌트는 답변 아래 접힌 칸)
+    $('#more-hint').textContent = keyHint() ? '🙋 다시 쉽게 설명해 줘' : '💡 힌트 하나 더';
     if (keyHint()) $('#ladder-wrap').hidden = true;
   }
   const FB = {
@@ -57,6 +57,22 @@
     $('#chat').appendChild(row); scrollDown();
     lastAiRow = role === 'ai' ? row : null;
     return row;
+  }
+  // 접어 둔 '🔑 결정적 힌트': 누르면 펼쳐지고, 펼친 기록을 서버에 남긴다 (원장님 화면·상담글용)
+  function addHint2(row, text, sid) {
+    const box = document.createElement('div'); box.className = 'hint2';
+    const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'hint2-btn';
+    btn.textContent = '🔑 결정적 힌트 보기'; btn.setAttribute('aria-expanded', 'false');
+    const body = document.createElement('div'); body.className = 'hint2-body'; body.hidden = true; body.textContent = text;
+    btn.onclick = () => {
+      const open = body.hidden;
+      body.hidden = !open; btn.setAttribute('aria-expanded', String(open));
+      btn.textContent = open ? '🔑 결정적 힌트 접기' : '🔑 결정적 힌트 보기';
+      if (open && !box.dataset.logged) { box.dataset.logged = '1'; api(`/session/${sid}/hint2`, {}).catch(() => {}); }
+      if (open) scrollDown();
+    };
+    box.append(btn, body);
+    row.querySelector('.stack').insertBefore(box, row.querySelector('.time'));
   }
   function typing(label) {
     const row = document.createElement('div'); row.className = 'row ai typing'; row.setAttribute('role', 'status');
@@ -306,9 +322,9 @@
     const text = $('#text').value.trim();
     if (!text && !photo && !moreHint) return;
     busy = true; updateSend();
-    if (moreHint) add('me', keyHint() ? '🔑 결정적 힌트 주세요' : '💡 힌트 하나 더');
+    if (moreHint) add('me', keyHint() ? '🙋 다시 쉽게 설명해 줘' : '💡 힌트 하나 더');
     else add('me', text, photo?.preview);
-    const body = { text: moreHint ? (text || (keyHint() ? '결정적 힌트 주세요' : '힌트 하나 더 주세요')) : text, sessionId, moreHint };
+    const body = { text: moreHint ? (text || (keyHint() ? '조금 더 쉽게 다시 설명해 줘' : '힌트 하나 더 주세요')) : text, sessionId, moreHint };
     const sent = photo && !moreHint ? photo : null;
     if (sent) body.image = { mediaType: sent.mediaType, base64: sent.base64 };
     $('#text').value = ''; autoGrow(); $('#preview').hidden = true; if (sent) photo = null;
@@ -317,7 +333,9 @@
       const r = await api('/ask', body);
       sessionId = r.sessionId; level = r.hintLevel; renderLadder();
       if (r.photo) renderQuota(r.photo);
-      t.remove(); add('ai', r.reply);
+      t.remove();
+      const row = add('ai', r.reply);
+      if (r.hint2) addHint2(row, r.hint2, r.sessionId);
     } catch (e) {
       t.remove();
       if (e.data?.code === 'PHOTO_QUOTA') {

@@ -13,6 +13,8 @@ w.fetch = async (url, opt = {}) => {
   if (url.endsWith('/me')) return loggedIn ? R(200, { nickname: '민준', classToken: 'qrA', photo: { used: 99, limit: 100, remaining: 1 }, feedback: { used: 28, limit: 30, remaining: 2, subject: 'english' } }) : R(401, { error: '로그인이 필요합니다' });
   if (url.endsWith('/login')) { if (body.pin === '1111') { loggedIn = true; return R(200, { nickname: '민준' }); } return R(401, { error: '번호나 비밀번호를 확인해 주세요' }); }
   if (url.endsWith('/ask') && body.image) return R(402, { error: '이번 달 사진 질문 100회를 모두 썼어. 문제를 글로 적어서 물어봐 줘!', code: 'PHOTO_QUOTA', used: 100, limit: 100, remaining: 0, upgradeTo: 'standard' });
+  if (url.endsWith('/ask') && body.text.includes('HINT2TEST')) return R(200, { sessionId: 's9', hintLevel: 0, reply: '📌 핵심 개념 퀴즈\n🧭 힌트 1 · 해결 흐름 3단계', hint2: '[2x] + 3 ---> 11', teachingMode: 'key_hint' });
+  if (url.endsWith('/session/s9/hint2')) return R(200, { ok: true });
   if (url.endsWith('/ask')) { await new Promise(r=>setTimeout(r,80)); return R(200, { sessionId: 's1', hintLevel: body.moreHint ? 1 : 0, reply: body.moreHint ? '이건 일차방정식이야. 등식의 성질 기억나?' : '어디까지 해 봤어?' }); }
   if (url.endsWith('/feedback')) {
     if (body.text.includes('LIMIT')) return R(402, { error: '이번 달 첨삭 30회를 모두 썼어.', code: 'FEEDBACK_QUOTA', used: 30, limit: 30, remaining: 0, upgradeTo: 'standard' });
@@ -65,6 +67,13 @@ let pass = 0, fail = 0; const ok = (c, m) => { c ? pass++ : fail++; console.log(
   ok(!$('#quota').hidden && $('#quota').textContent.includes('스탠다드'), '사진 한도 초과 → 업그레이드 안내 팝업');
   ok($('#cam-badge').textContent === '0', '카메라 버튼 잔여 0');
   $('#quota-ok').click(); ok($('#quota').hidden, '팝업 닫고 글로 질문');
+  // ---- 접어 둔 결정적 힌트 ----
+  w.fetch = origFetch;   // 위 사진 한도 시험용으로 바꿔 둔 fetch 되돌리기
+  $('#text').value = 'HINT2TEST 2x+3=11'; $('#text').dispatchEvent(new w.Event('input')); $('#send').click(); await new Promise(r=>setTimeout(r,80));
+  const h2btn = [...w.document.querySelectorAll('.hint2-btn')].at(-1), h2body = [...w.document.querySelectorAll('.hint2-body')].at(-1);
+  ok(h2btn && h2body.hidden && !h2body.closest('.row').querySelector('.bubble').textContent.includes('--->'), '결정적 힌트는 접힌 채로 답변 아래에');
+  h2btn.click(); await tick();
+  ok(!h2body.hidden && h2body.textContent.includes('[2x] + 3 ---> 11') && calls.some((c) => c[0] === '/api/student/session/s9/hint2'), '"🔑 결정적 힌트 보기" → 펼쳐지고 서버에 기록');
   // ---- 영작 첨삭 ----
   ok(!$('#fb-chip').hidden && $('#fb-chip').textContent.includes('✍️ 첨삭') && $('#fb-chip-n').textContent === '2회', '✍️ 첨삭 버튼 하나 + 이번 달 남은 횟수(2회)');
   ok($('#chat').textContent.includes('영어 글이나 수학 풀이') && $('#chat').textContent.includes('첨삭 버튼을 눌러'), '첫 인사에 첨삭 버튼 안내 (영어·수학 둘 다)');

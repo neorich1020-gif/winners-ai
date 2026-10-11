@@ -33,7 +33,7 @@ function directorLabel(name) {
 function buildKeyHintPrompt({ academy, cls, student, materials, hasImage, hintLevel = 0 }) {
   const examples = (academy.persona_examples || '').trim();
   const mats = materials.map((m) => `- [${m.title}] 범위: ${m.scope_note}\n  핵심: ${m.content.slice(0, 1500)}`).join('\n');
-  const dir = directorLabel(academy.director_name);
+  const dir = '선생님';   // 원장님 요청: 특정 원장님 이름 대신 "선생님"
   const grade = cls.grade_band;
   const analogy = grade === 'high'
     ? '고등 문제·개념: 중학생도 직관적으로 유추할 수 있는 비유와 시각적 뼈대(글자로 그린 간단한 도식)를 쓴다.'
@@ -57,7 +57,7 @@ ${examples ? `원장님이 실제로 쓰는 말(어투만 참고):\n${examples}`
 # 핵심 프레임워크: 3칸 매트릭스 + 직관적 비유
 개념원리처럼 깔끔한 3칸 구조로 설명하고, 친숙한 비유나 쉬운 도식을 쓴다.
 - ${analogy}
-- 도식은 휴대폰 화면에서 깨지지 않게 짧은 줄과 화살표(→), 괄호, [ ] 정도로만 그린다.
+- 도식은 휴대폰 화면에서 깨지지 않게 짧은 줄과 텍스트 기호([ ], ( ), --->, →) 정도로만 그린다.
 
 학생에게 보이는 칸 제목은 아래 표시를 그대로 쓴다:
 📌 핵심 개념 퀴즈
@@ -71,15 +71,20 @@ ${examples ? `원장님이 실제로 쓰는 말(어투만 참고):\n${examples}`
 - 흐름 뒤에는 반드시 이 문장으로 묻는다:
   "여기에서 혹시 헷갈리거나 모르는 개념이 있다면 편하게 말해줄래? ${dir} 노트에 저장해 둘게!"
 
-🔑 힌트 2 · 결정적 단서
-- 글자 도식이나 직관적 비유로, 정답까지 바로 갈 수 있는 결정적 열쇠 1개. 그래도 최종 답 자체는 학생이 쓴다.
-- ${hintLevel >= 1 ? '지금은 학생이 결정적 힌트를 요청했다. 이번 답변에서 힌트 2를 준다.' : '처음 답변에는 힌트 2를 넣지 않는다. 학생이 흐름을 보고도 막히거나 "결정적 힌트"를 요청하면 그때 준다.'}
+🔑 힌트 2 · 결정적 힌트 (접어 두기)
+- 텍스트 기호([ ], ( ), ---> 등)로 그린 시각적 뼈대(그림)와 직관적 비유로 문제의 핵심을 꿰뚫는 결정적 열쇠 1개. 그래도 최종 답 자체는 학생이 쓴다.
+- 학생 화면에서는 접혀 있다가 학생이 "🔑 결정적 힌트 보기"를 눌러야 펼쳐진다. 그러니 퀴즈·흐름과 함께 같은 답변에서 미리 써 두되,
+  반드시 아래 표시 사이에만 쓴다 (표시 밖에는 힌트 2 내용을 쓰지 않는다):
+<<HINT2>>
+(여기에 도식과 비유)
+<<END_HINT2>>
+- 문제를 새로 설명하는 답변에는 매번 힌트 2를 넣는다. 학생 답 확인, 개념 설명, 오답노트 확인처럼 문제 설명이 아닌 답변에는 넣지 않는다.
 
 학생이 모르는 개념을 말하면: 그 개념만 비유로 짧게 풀어 주고("${dir} 노트에 저장했어!"라고 알려 주고) 다시 흐름으로 돌아가게 한다.
 
 # 과목별 지도
 ## 수학
-1. 학생이 "풀어줘!"라고 해도 완성된 전체 계산 풀이를 바로 주지 않는다. 위의 핵심 개념 퀴즈 + 해결 흐름 3단계 + 모르는 개념 점검 질문으로 스스로 풀게 돕는다.
+1. 학생이 "풀어줘!"라고 하거나 풀이를 요청해도 완성된 전체 계산 풀이를 바로 주지 않는다. 위의 핵심 개념 퀴즈 + 해결 흐름 3단계 + 모르는 개념 점검 질문 + 접어 둔 비유/도식 힌트로 스스로 풀게 돕는다.
 2. 학생이 흐름을 이해하고 풀이를 써 내면 맞는지 확인하고, 맞으면 반드시 이 멘트로 오답노트 인증을 지시한다:
    "자 그럼 풀이 흐름이 이해됐지? 여기까지 작성한 내용을 오답노트에 적어서 인증해줘!"
 3. 오답노트 사진이나 글로 인증하면 흐름대로 적혔는지 확인하고 구체적으로 칭찬한다. 빠진 줄이 있으면 그 줄만 짚는다.
@@ -88,7 +93,7 @@ ${examples ? `원장님이 실제로 쓰는 말(어투만 참고):\n${examples}`
 ## 영어 및 기타 과목
 1. 책이나 시험지 통째로 여러 문제가 올라오면 먼저 다정하게 묻는다:
    "사진 속에 여러 문제가 있네! 몇 번 문제(어느 지문)부터 풀어볼까?"
-2. 문제·지문이 하나로 정해지면 핵심 개념 퀴즈 1개 + 해결 흐름 3단계 힌트만 주고, 스스로 답을 내게 이끈다.
+2. 문제·지문이 하나로 정해지면 핵심 개념 퀴즈 1개 + 해결 흐름 3단계 + 접어 둔 도식/비유 힌트를 주고, 스스로 답을 내게 이끈다.
    - 영어 문장은 뼈대(주어 S / 동사 V)를 기준으로, 핵심 덩어리는 [ ], 꾸며 주는 말은 ( )로 나눠 흐름에 활용한다.
    - 정답(빈칸 답, 고른 번호)과 문장 전체 해석은 바로 주지 않는다.
 3. 학생이 답을 말하면 맞는지 알려 주고, 틀렸으면 흐름의 몇 단계를 다시 보면 되는지만 짚는다.
@@ -114,7 +119,7 @@ ${mats || '(등록된 교재 없음 — 학생이 보여 준 문제 기준으로
 3. 그다음 줄부터 학생에게 보낼 말.
 4. 맨 마지막에 학생에게 보이지 않는 요약을 아래 형식 그대로 한 줄로 붙인다 (지금까지 대화 기준으로 매번 새로 씀):
 <<SUMMARY>>{"subject":"과목명","topic":"오늘 공부한 주제","weakness_point":"헷갈려 했던 개념/단계 (없으면 빈 문자열)","math_wrong_note_assigned":true 또는 false,"director_note":"원장님이 주말에 챙겨 줄 코칭 한 줄","parent_cheering_msg":"학부모님용 칭찬 한 줄"}<<END>>
-   - 학생 이름·학원 ID·학생 ID는 쓰지 않는다(시스템이 넣는다). 대화에 없는 사실(점수, 등수, 가정사)은 지어내지 않는다.
+   - 학생 이름·학원 ID·학생 ID·힌트 2를 열었는지는 쓰지 않는다(시스템이 넣는다). 대화에 없는 사실(점수, 등수, 가정사)은 지어내지 않는다.
 `.trim();
 }
 
@@ -205,24 +210,37 @@ function extractSummary(raw) {
   return { text, summary };
 }
 
+// 접어 둘 힌트 2: <<HINT2>> ... <<END_HINT2>> 를 떼어 따로 돌려준다
+const HINT2_RE = /<<HINT2>>([\s\S]*?)(<<END_HINT2>>|$)/;
+function extractHint2(text) {
+  const m = String(text).match(HINT2_RE);
+  if (!m) return { text, hint2: null };
+  const rest = (String(text).slice(0, m.index) + String(text).slice(m.index + m[0].length)).replace(/\n*🔑 힌트 2[^\n]*\n*$/, '').trim();
+  const h = m[1].trim();
+  return { text: rest, hint2: h ? h.slice(0, 1500) : null };
+}
+
 function parseModelOutput(raw) {
   ({ text: raw } = extractSummary(raw));   // 요약 블록은 따로 떼어 내 화면에 섞이지 않게
+  let hint2;
+  ({ text: raw, hint2 } = extractHint2(raw));
   const m = raw.match(/^\s*\[(HINT|CHECK|OFFTOPIC|SAFETY)\]\s*/);
   const verdict = m ? m[1].toLowerCase() : 'hint';
   let rest = m ? raw.slice(m[0].length) : raw;
   const t = rest.match(/^\s*\[TOPIC:\s*([^\]]{1,30})\]\s*/);
   const topic = t ? t[1].trim() : null;
   if (t) rest = rest.slice(t[0].length);
-  return { verdict: verdict === 'offtopic' ? 'refuse_offtopic' : verdict, topic, text: rest.trim() };
+  return { verdict: verdict === 'offtopic' ? 'refuse_offtopic' : verdict, topic, text: rest.trim(), hint2 };
 }
 
 // 낮은 힌트 단계인데 "정답은 ~" 같은 표현이 나오면 버리고 안전한 문장으로 교체
 const LEAK = /(정답은|답은\s*[^?]{0,15}(입니다|이야|야\b|다\.)|따라서\s*x\s*=|∴|최종\s*답)/;
 function postCheck(parsed, hintLevel) {
+  if (parsed.hint2 && parsed.verdict !== 'safety' && LEAK.test(parsed.hint2)) parsed = { ...parsed, hint2: null, hint2Leaked: true };
   if (parsed.verdict !== 'safety' && hintLevel < 4 && LEAK.test(parsed.text)) {
     return { ...parsed, leaked: true, text: '거의 다 왔어! 마지막 계산은 네가 직접 해 보자. 지금까지 쓴 식을 보여 주면 맞는지 확인해 줄게.' };
   }
   return parsed;
 }
 
-module.exports = { buildSystemPrompt, preFilter, parseModelOutput, postCheck, extractSummary, directorLabel, HINT_LADDER };
+module.exports = { buildSystemPrompt, preFilter, parseModelOutput, postCheck, extractSummary, extractHint2, directorLabel, HINT_LADDER };

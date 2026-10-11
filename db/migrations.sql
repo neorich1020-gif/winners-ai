@@ -73,3 +73,6 @@ DO $$ BEGIN
 END $$;
 -- 질문 1건(세션)의 요약: 공부한 주제, 막힌 부분, 오답노트 지시 여부, 원장님 코칭 메모, 학부모 칭찬 한 줄 (학생에게는 안 보임)
 ALTER TABLE question_sessions ADD COLUMN IF NOT EXISTS summary JSONB;
+
+-- 접어 둔 '🔑 결정적 힌트'(힌트 2)를 학생이 펼쳐 봤는지 (원장님 화면·상담글용)
+ALTER TABLE question_sessions ADD COLUMN IF NOT EXISTS hint2_opened BOOLEAN NOT NULL DEFAULT FALSE;

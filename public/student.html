@@ -195,6 +195,11 @@ button{cursor:pointer;border:0;background:none;padding:0}
 .fbc .acts button.alt{background:var(--surface);color:var(--ink);box-shadow:inset 0 0 0 1px var(--hair)}
 .fbc .acts button:disabled{opacity:.45}
 .fbc .done{margin-top:10px;font-size:13.5px;color:var(--sub)}
+/* 접어 둔 결정적 힌트 */
+.hint2{display:flex;flex-direction:column;gap:6px;max-width:100%}
+.hint2-btn{align-self:flex-start;padding:8px 14px;border-radius:999px;font-size:14px;font-weight:700;background:var(--hint-soft);color:#8A5A00;box-shadow:var(--shadow-sm)}
+@media (prefers-color-scheme:dark){.hint2-btn{color:#FFCF70}}
+.hint2-body{background:var(--surface);border:1.5px dashed var(--hint);border-radius:16px;padding:12px 14px;white-space:pre-wrap;word-break:keep-all;overflow-wrap:anywhere;font-size:15px;line-height:1.7;font-variant-ligatures:none}
 </style>
 </head>
 <body>

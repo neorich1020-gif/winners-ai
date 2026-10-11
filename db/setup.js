@@ -80,10 +80,10 @@ async function main() {
           await c.query('COMMIT');
           console.log('[setup] 체험용 반·학생을 만들었습니다');
         }
-        // 체험 학원(위너스학원) 원장님 호칭: 튜터가 "윤원장님 노트에 저장해 둘게!"라고 말할 때 사용
+        // (이전 버전에서 체험 학원 원장님 호칭을 '윤원장'으로 바꿨던 것을 되돌림 — 튜터는 이제 "선생님"이라고 부름)
         await c.query(
-          `UPDATE academies SET director_name='윤원장'
-            WHERE director_name='원장' AND id IN (SELECT academy_id FROM classes WHERE qr_token IN ($1, $2))`,
+          `UPDATE academies SET director_name='원장'
+            WHERE director_name='윤원장' AND id IN (SELECT academy_id FROM classes WHERE qr_token IN ($1, $2))`,
           [token, token + '-en']);
         // 체험 학원(위너스학원)은 원장님이 고른 '핵심 힌트형' 지도 방식으로 시작 (원장님이 따로 바꾼 적 없을 때만)
         await c.query(

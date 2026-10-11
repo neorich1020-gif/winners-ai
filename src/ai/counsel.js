@@ -21,6 +21,7 @@ function notesLine(n) {
   return [
     n.weakness.length ? `튜터 대화에서 막혔던 부분: ${n.weakness.join(' / ')}` : '',
     n.wrongNotes ? `오답노트 작성 지시 ${n.wrongNotes}회` : '',
+    n.problems ? `결정적 힌트 없이 흐름만으로 푼 문제 ${n.problems - (n.hint2Opened || 0)}개 / 결정적 힌트를 펼쳐 본 문제 ${n.hint2Opened || 0}개` : '',
     n.director.length ? `튜터 코칭 메모(원장님 참고): ${n.director.join(' / ')}` : '',
     n.cheering.length ? `칭찬 포인트: ${n.cheering[0]}` : '',
   ].filter(Boolean).join('\n');
