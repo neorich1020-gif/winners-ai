@@ -1,7 +1,7 @@
 // 실행 전 준비: PostgreSQL(127.0.0.1:54329, postgres/pw)에 db/schema.sql, db/functions.sql, db/roles.sql 적용 후
 //   node tests/integration.js            (계정 2개 방식)
 //   TEST_DB_URL=<단일 계정 주소> node tests/integration.js   (Render처럼 계정 1개 + node db/setup.js 후)
-// AI는 가짜 응답, 알림톡은 DRY_RUN — 실제 발송·과금 없음 · 통합 테스트 140개
+// AI는 가짜 응답, 알림톡은 DRY_RUN — 실제 발송·과금 없음 · 통합 테스트 141개
 // 주간 상담글 기능 통합 테스트: 실제 PostgreSQL + 실제 서버 + DRY_RUN 발송 (AI만 가짜 응답)
 const crypto = require('crypto');
 Object.assign(process.env, {
@@ -123,7 +123,8 @@ function client() {
   ok(r.status === 200, '원장 로그인', r);
   r = await dir('GET', '/api/director/counsel');
   ok(r.status === 200 && r.body.rows.length === 3, '위너스학원 학생 3명만 표에 나옴', r.body);
-  ok(r.body.week === '2026-10-05' && r.body.sendAt === '2026-10-09 18:00', `발송 예정: ${r.body.sendAt}`, r.body);
+  const fri = new Date(r.body.week + 'T00:00:00Z'); fri.setUTCDate(fri.getUTCDate() + 4);
+  ok(new Date(r.body.week + 'T00:00:00Z').getUTCDay() === 1 && r.body.sendAt === fri.toISOString().slice(0, 10) + ' 18:00', `이번 주(${r.body.week}) 발송 예정: ${r.body.sendAt}`, r.body);
   const mj = r.body.rows.find((x) => x.nickname === '민준');
   ok(mj.ai_stats.questions === 4 && mj.ai_stats.weak.includes('일차함수 기울기'), `민준 AI 기록 자동 연결: 질문 ${mj.ai_stats.questions}, 보완 ${mj.ai_stats.weak}`, mj.ai_stats);
   ok(r.body.rows.find((x) => x.nickname === '서연').can_send === false, '서연(동의서 없음)은 발송 불가로 표시');
@@ -362,6 +363,9 @@ function client() {
   const used2 = (await admin.query('SELECT feedback_reviews FROM monthly_usage WHERE academy_id=$1', [A])).rows[0];
   ok(r.status === 422 && r.body.code === 'UNREADABLE' && used2.feedback_reviews === used1.feedback_reviews, `안 보이는 사진은 다시 찍기 안내 + 횟수 차감 안 함 (${used2.feedback_reviews}회)`, r);
   ok(used1.feedback_reviews === 3, '첨삭 횟수는 사진 질문 횟수와 따로 셈', used1);
+  r = await fm('POST', '/api/student/feedback', { text: 'I go to school yesterday.', subject: 'english' });
+  ok(r.status === 200 && r.body.subject === 'english', '수학 반 학생도 같은 화면에서 영어 영작 첨삭 가능', r.body);
+  await admin.query('UPDATE monthly_usage SET feedback_reviews = feedback_reviews - 1 WHERE academy_id=$1', [A]);
   r = await fm('POST', '/api/student/feedback', { text: 'GAME 스크린샷' });
   ok(r.status === 422 && r.body.code === 'OFFTOPIC', '공부와 관계없는 글은 거절', r);
 

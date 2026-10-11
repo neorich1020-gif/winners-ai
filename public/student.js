@@ -89,7 +89,10 @@
     if (!fb?.subject) { $('#fb-chip').hidden = true; return; }
     const c = FB[fb.subject];
     $('#fb-chip').hidden = false;
-    $('#fb-chip-label').textContent = c.chip;
+    $('#fb-chip-label').textContent = '✍️ 첨삭';
+    $('#fb-en').setAttribute('aria-pressed', String(fb.subject === 'english'));
+    $('#fb-ma').setAttribute('aria-pressed', String(fb.subject === 'math'));
+    $('#fb-en').disabled = $('#fb-ma').disabled = !!retryOf;   // 고쳐 쓰는 중에는 과목 고정
     $('#fb-chip').classList.toggle('on', fbMode);
     $('#fb-chip').setAttribute('aria-pressed', String(fbMode));
     const n = $('#fb-chip-n');
@@ -113,6 +116,13 @@
     setFbMode(!fbMode);
     if (fbMode) add('sys', `${FB[fb.subject].chip} 시작! ${FB[fb.subject].mode}`);
   };
+  function pickSubject(sub) {
+    if (retryOf || fb.subject === sub) return;
+    fb.subject = sub; renderFb();
+    add('sys', `${FB[sub].chip.slice(2).trim()}으로 바꿨어! ${FB[sub].mode}`);
+  }
+  $('#fb-en').onclick = () => pickSubject('english');
+  $('#fb-ma').onclick = () => pickSubject('math');
   $('#fb-exit').onclick = () => { setFbMode(false); add('sys', '첨삭 끝! 다시 질문창으로 돌아왔어'); };
   function showFbQuota() { $('#fb-quota').hidden = false; $('#fbq-ok').focus(); }
   $('#fbq-ok').onclick = () => { $('#fb-quota').hidden = true; setFbMode(false); $('#text').focus(); };
@@ -145,7 +155,7 @@
     if (r.canRetry) {
       const acts = el('div', 'acts');
       const again = el('button', '', r.subject === 'english' ? '✏️ 고쳐 쓰기' : '✏️ 다시 풀기');
-      again.onclick = () => { setFbMode(true, r.id); add('sys', FB[r.subject].retry); };
+      again.onclick = () => { fb.subject = r.subject; setFbMode(true, r.id); add('sys', FB[r.subject].retry); };
       acts.appendChild(again);
       if (r.canReveal) {
         const idk = el('button', 'alt', '🤔 모르겠어요');
@@ -176,7 +186,7 @@
   function showChat(nickname) {
     $('#login').hidden = true;
     ['#chat', '#bar', '#ladder-wrap', '#logout'].forEach((s) => ($(s).hidden = false));
-    if (!$('#chat').childElementCount) add('ai', `${nickname}, 안녕! 어떤 문제가 막혔어?\n글로 적거나 📷 버튼으로 문제 사진을 올려 줘.${fb?.subject ? `\n직접 쓴 ${FB[fb.subject].what} 봐 줬으면 아래 ${FB[fb.subject].chip} 버튼을 눌러 줘.` : ''}`);
+    if (!$('#chat').childElementCount) add('ai', `${nickname}, 안녕! 어떤 문제가 막혔어?\n글로 적거나 📷 버튼으로 문제 사진을 올려 줘.${fb?.subject ? `\n직접 쓴 영어 글이나 수학 풀이를 봐 줬으면 아래 ✍️ 첨삭 버튼을 눌러 줘.` : ''}`);
     renderLadder(); renderFb(); applyMode(); updateSend();
     maybeShowInstall();
   }
@@ -269,7 +279,7 @@
     if (!text && !photo) return;
     busy = true; updateSend();
     add('me', text, photo?.preview);
-    const body = { text };
+    const body = { text, subject: fb.subject };
     const sent = photo;
     if (sent) body.image = { mediaType: sent.mediaType, base64: sent.base64 };
     $('#text').value = ''; autoGrow(); $('#preview').hidden = true; photo = null;

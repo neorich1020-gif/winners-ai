@@ -166,7 +166,11 @@ button{cursor:pointer;border:0;background:none;padding:0}
 .mode{display:flex;align-items:center;gap:10px;background:var(--ok-soft);color:var(--ink);border-radius:16px;padding:9px 10px 9px 14px;font-size:13.5px;box-shadow:var(--shadow-sm)}
 .mode b{color:#11764A}
 @media (prefers-color-scheme:dark){.mode b{color:#7BE0AE}}
-.mode span{flex:1;min-width:0}
+.mode{flex-wrap:wrap}
+.mode > span:first-child{flex:1 1 160px;min-width:0}
+.mode .seg{display:flex;background:var(--surface);border-radius:999px;padding:2px;flex:none}
+.mode .seg button{padding:5px 11px;border-radius:999px;font-size:12.5px;font-weight:700;color:var(--sub);background:none}
+.mode .seg button[aria-pressed="true"]{background:var(--ok);color:#fff}
 .mode .ghost{flex:none}
 .bubble.fbc{white-space:normal;padding:14px 16px}
 .fbc .fb-msg{margin:0 0 10px;white-space:pre-wrap}
@@ -244,6 +248,7 @@ button{cursor:pointer;border:0;background:none;padding:0}
     </div>
     <div class="mode" id="fb-mode" hidden role="status">
       <span id="fb-mode-text"></span>
+      <span class="seg" role="group" aria-label="첨삭 과목"><button type="button" id="fb-en" aria-pressed="true">영어 영작</button><button type="button" id="fb-ma" aria-pressed="false">수학 풀이</button></span>
       <button class="ghost" id="fb-exit">끝내기</button>
     </div>
     <div class="preview" id="preview" hidden>

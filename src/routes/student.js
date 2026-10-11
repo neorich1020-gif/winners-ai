@@ -57,7 +57,7 @@ r.get('/me', requireAuth('student'), async (req, res, next) => {
       const plan = await getPlan(c, st.plan_code);
       const photo = await photoUsage(c, req.user.aid, plan); // 라이트면 이번 달 남은 사진 질문 수
       const fb = await feedbackUsage(c, req.user.aid, plan);  // 라이트면 이번 달 남은 첨삭 수
-      const fbSubject = ['english', 'math'].includes(st.subject) ? st.subject : null;
+      const fbSubject = ['english', 'math'].includes(st.subject) ? st.subject : 'english'; // 처음 선택값 (화면에서 영어/수학 바꿀 수 있음)
       return { nickname: st.nickname, classToken: st.qr_token, photo, feedback: { ...fb, subject: fbSubject },
         teachingMode: st.teaching_mode === 'key_hint' ? 'key_hint' : 'hint_ladder' };
     });

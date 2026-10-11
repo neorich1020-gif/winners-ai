@@ -66,15 +66,19 @@ let pass = 0, fail = 0; const ok = (c, m) => { c ? pass++ : fail++; console.log(
   ok($('#cam-badge').textContent === '0', '카메라 버튼 잔여 0');
   $('#quota-ok').click(); ok($('#quota').hidden, '팝업 닫고 글로 질문');
   // ---- 영작 첨삭 ----
-  ok(!$('#fb-chip').hidden && $('#fb-chip').textContent.includes('영작 첨삭') && $('#fb-chip-n').textContent === '2회', '영어 반: ✍️ 영작 첨삭 버튼 + 이번 달 남은 횟수(2회)');
-  ok($('#chat').textContent.includes('영작 첨삭 버튼을 눌러'), '첫 인사에 첨삭 버튼 안내');
+  ok(!$('#fb-chip').hidden && $('#fb-chip').textContent.includes('✍️ 첨삭') && $('#fb-chip-n').textContent === '2회', '✍️ 첨삭 버튼 하나 + 이번 달 남은 횟수(2회)');
+  ok($('#chat').textContent.includes('영어 글이나 수학 풀이') && $('#chat').textContent.includes('첨삭 버튼을 눌러'), '첫 인사에 첨삭 버튼 안내 (영어·수학 둘 다)');
   $('#fb-chip').click(); await tick();
   ok(!$('#fb-mode').hidden && $('#fb-mode').textContent.includes('영어 글') && $('#ladder-wrap').hidden && $('#more-hint').hidden, '첨삭 모드: 안내 띠 표시, 힌트 단계·힌트 버튼 숨김');
   ok($('#text').placeholder.includes('영어 글'), '입력칸 안내 문구 변경');
+  ok($('#fb-en').getAttribute('aria-pressed') === 'true' && $('#fb-ma'), '같은 화면에 영어 영작 / 수학 풀이 선택 버튼');
+  $('#fb-ma').click(); await tick();
+  ok($('#fb-ma').getAttribute('aria-pressed') === 'true' && $('#text').placeholder.includes('풀이') && $('#chat').textContent.includes('풀이 첨삭으로 바꿨어'), '수학 풀이로 바꾸면 안내·입력칸이 수학용으로');
+  $('#fb-en').click(); await tick();
   ok($('#cam-badge').hidden, '첨삭 모드에선 사진 질문 잔여 뱃지 숨김(첨삭 사진은 따로 셈)');
   $('#text').value = 'My favorite food is pizza. I go to school yesterday. I ate a apple.'; $('#text').dispatchEvent(new w.Event('input'));
   $('#send').click(); await new Promise(r=>setTimeout(r,80));
-  ok(calls.at(-1)[0] === '/api/student/feedback' && calls.at(-1)[1].text.includes('pizza'), '첨삭 모드에서 보내면 첨삭 주소로 전송');
+  ok(calls.at(-1)[0] === '/api/student/feedback' && calls.at(-1)[1].text.includes('pizza') && calls.at(-1)[1].subject === 'english', '첨삭 모드에서 보내면 첨삭 주소로, 고른 과목과 함께 전송');
   let card = [...w.document.querySelectorAll('.bubble.fbc')].at(-1);
   ok(card && card.querySelectorAll('li').length === 2 && card.querySelector('mark').textContent === 'I go to school yesterday', '첨삭 카드: 틀린 부분 2곳 표시(밑줄)');
   ok(card.textContent.includes('💡 동사 모양') && !card.querySelector('.fix'), '1단계: 힌트만, 고친 표현 없음');

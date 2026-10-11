@@ -249,10 +249,11 @@ async function flagSafety(client, ctx, sessionId, text) {
     [ctx.academy.id, ctx.student.id, m.id, 'wellbeing']);
 }
 
+// 한 화면에서 영어·수학 둘 다: 학생이 고른 과목이 우선, 안 고르면 반 과목, 그것도 아니면 영어
 function subjectFor(cls, requested) {
-  if (cls.subject === 'english' || cls.subject === 'math') return cls.subject;
   if (requested === 'english' || requested === 'math') return requested;
-  throw Object.assign(new Error('이 반에서는 영어 영작·수학 풀이 첨삭만 할 수 있어요.'), { status: 400 });
+  if (cls.subject === 'english' || cls.subject === 'math') return cls.subject;
+  return 'english';
 }
 
 function readInput({ text, image }) {
