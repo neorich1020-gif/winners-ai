@@ -1,7 +1,7 @@
 // 실행 전 준비: PostgreSQL(127.0.0.1:54329, postgres/pw)에 db/schema.sql, db/functions.sql, db/roles.sql 적용 후
 //   node tests/integration.js            (계정 2개 방식)
 //   TEST_DB_URL=<단일 계정 주소> node tests/integration.js   (Render처럼 계정 1개 + node db/setup.js 후)
-// AI는 가짜 응답, 알림톡은 DRY_RUN — 실제 발송·과금 없음 · 통합 테스트 141개
+// AI는 가짜 응답, 알림톡은 DRY_RUN — 실제 발송·과금 없음 · 통합 테스트 147개
 // 주간 상담글 기능 통합 테스트: 실제 PostgreSQL + 실제 서버 + DRY_RUN 발송 (AI만 가짜 응답)
 const crypto = require('crypto');
 Object.assign(process.env, {
@@ -31,7 +31,11 @@ Module._load = function (req, ...rest) {
         return { content: [{ type: 'text', text: '안녕하세요, 민준 학부모님. 위너스학원 김원장입니다.\n\n이번 주 수학은 일차함수 그래프와 기울기를 마쳤고, 확인 테스트도 잘 봤습니다. 집에서도 AI 질문창으로 꾸준히 물어보며 스스로 해결하는 비율이 높았어요.\n\n수업 시간에는 질문이 눈에 띄게 늘었고 오답노트도 꼼꼼했습니다. 다만 숙제를 한 번 빠뜨린 날이 있어 다음 주에는 수업 전에 제가 한 번 더 확인하겠습니다.\n\n가정에서는 오늘 배운 문제 하나만 설명해 달라고 물어봐 주세요. 궁금하신 점은 언제든 연락 주세요. 감사합니다.' }] };
       }
       if (args.system.includes('1:1 학습 튜터')) {
-        return { content: [{ type: 'text', text: '[HINT]\n[TOPIC: 일차방정식]\n좋아, 같이 풀어 보자!\n1) 2x + 3 = 11\n2) 2x = 8 (양쪽에서 3을 빼)\n3) x = 4 (양쪽을 2로 나눠)\n따라서 x = 4\n여기까지 이해됐니? 이해 안 가는 줄(단계)이 있다면 편하게 말해줘!\n<<SUMMARY>>{"topic":"일차방정식","weakness_point":"이항할 때 부호","math_wrong_note_assigned":true,"director_note":"이항 부호 연습 3문제 더","parent_cheering_msg":"막힌 줄을 정확히 짚어 질문했어요"}<<END>>' }] };
+        const last = JSON.stringify(args.messages.at(-1));
+        if (last.includes('2x = 8')) {
+          return { content: [{ type: 'text', text: '[CHECK]\n[TOPIC: 일차방정식]\n맞아! 2x = 8 이니까 x = 4 정답이야.\n자 그럼 풀이 흐름이 이해됐지? 여기까지 작성한 내용을 오답노트에 적어서 인증해줘!\n<<SUMMARY>>{"subject":"수학","topic":"일차방정식","weakness_point":"이항할 때 부호","math_wrong_note_assigned":true,"director_note":"이항 부호 연습 3문제 더","parent_cheering_msg":"막힌 줄을 정확히 짚어 질문했어요"}<<END>>' }] };
+        }
+        return { content: [{ type: 'text', text: '[HINT]\n[TOPIC: 일차방정식]\n📌 핵심 개념 퀴즈\n저울 양쪽에 같은 무게를 빼도 저울은 기울지 않을까?\n🧭 힌트 1 · 해결 흐름 3단계\n1단계: 등식의 성질\n2단계: 양변에서 같은 수를 빼서 x 쪽만 남기기\n3단계: x 앞의 숫자로 양변 나누기\n여기에서 혹시 헷갈리거나 모르는 개념이 있다면 편하게 말해줄래? 윤원장님 노트에 저장해 둘게!\n<<SUMMARY>>{"subject":"수학","topic":"일차방정식","weakness_point":"이항할 때 부호","math_wrong_note_assigned":false,"director_note":"이항 부호 연습 3문제 더","parent_cheering_msg":"막힌 줄을 정확히 짚어 질문했어요"}<<END>>' }] };
       }
       return { content: [{ type: 'text', text: '[HINT]\n[TOPIC: 일차방정식]\n민준아, 어디까지 해 봤어?' }] };
     } }; } };
@@ -440,14 +444,26 @@ function client() {
   r = await he('POST', '/api/student/ask', { text: '2x+3=11 어떻게 풀어요?' });
   const kp = prompts.at(-1) || '';
   ok(r.status === 200 && r.body.teachingMode === 'key_hint', '핵심 힌트형으로 답변', r.body);
-  ok(kp.includes('멘트윈 1:1 학습 튜터') && kp.includes('풀이 과정 전체를 한 번에') && kp.includes('자 그럼 풀이를 적어줄게!') && kp.includes('여기까지 이해됐니? 오답노트를 적어서 인증해줘!'), '프롬프트: 수학 풀이 전체 → 이해 확인 → 오답노트');
-  ok(kp.includes('[ ]') && kp.includes('1회성 핵심 힌트') && kp.includes('몇 번 문제(어느 지문)부터 풀어볼까?'), '프롬프트: 영어는 문제 번호 먼저 묻고 → 뼈대(S/V)·[핵심]으로 1회성 힌트');
+  ok(kp.includes('멘트윈 1:1 학습 튜터') && kp.includes('📌 핵심 개념 퀴즈') && kp.includes('🧭 힌트 1 · 해결 흐름 3단계') && kp.includes('🔑 힌트 2 · 결정적 단서'), '프롬프트: 3칸 매트릭스(퀴즈·흐름 3단계·결정적 단서)');
+  ok(kp.includes('완성된 전체 계산 풀이를 바로 주지 않는다') && kp.includes('여기까지 작성한 내용을 오답노트에 적어서 인증해줘!'), '프롬프트: 수학은 완성 풀이 대신 흐름 → 풀어 내면 오답노트 인증');
+  ok(kp.includes('노트에 저장해 둘게!') && kp.includes('초등학생도 한 번에 이해할 수 있는'), '프롬프트: 모르는 개념 점검 질문 + 중등은 초등 눈높이 비유');
+  ok(kp.includes('처음 답변에는 힌트 2를 넣지 않는다'), '첫 답변엔 힌트 2(결정적 단서)는 아껴 둠');
+  ok(kp.includes('[ ]') && kp.includes('핵심 개념 퀴즈 1개 + 해결 흐름 3단계 힌트만') && kp.includes('몇 번 문제(어느 지문)부터 풀어볼까?'), '프롬프트: 영어는 문제 번호 먼저 묻고 → 퀴즈 + 흐름 3단계 (S/V·[핵심] 활용)');
   ok(kp.includes('기술적 용어를 쓰지 않는다') && kp.includes('속이지 않고') && kp.includes('기를 꺾는 거절 표현은 쓰지 않는다') && kp.includes('"subject"'), '기술 용어·기 꺾는 거절 금지, 진지하게 물으면 솔직하게, 요약에 과목 포함');
-  ok(r.body.reply.includes('x = 4') && r.body.reply.includes('여기까지 이해됐니'), '수학은 풀이 전체가 그대로 학생에게 전달 (정답 가리기 검사 안 함)', r.body.reply);
+  ok(r.body.reply.includes('📌 핵심 개념 퀴즈') && r.body.reply.includes('노트에 저장해 둘게'), '학생에게 퀴즈 + 흐름 3단계 + 개념 점검 질문 전달', r.body.reply);
   ok(!r.body.reply.includes('SUMMARY') && !r.body.reply.includes('weakness'), '요약 데이터는 학생 화면에 안 보임');
   const sm = (await admin.query('SELECT summary FROM question_sessions WHERE id=$1', [r.body.sessionId])).rows[0].summary;
-  ok(sm?.weakness_point === '이항할 때 부호' && sm.math_wrong_note_assigned === true && sm.parent_cheering_msg, '요약(막힌 부분·오답노트·칭찬 한 줄)은 DB에 저장', sm);
-  const savedAi = (await admin.query("SELECT content FROM messages WHERE session_id=$1 AND role='ai'", [r.body.sessionId])).rows[0].content;
+  ok(sm?.weakness_point === '이항할 때 부호' && sm.subject === '수학' && sm.math_wrong_note_assigned === false && sm.parent_cheering_msg, '요약(과목·막힌 부분·칭찬 한 줄)은 DB에 저장, 아직 오답노트 지시 전', sm);
+  const sidKH = r.body.sessionId;
+  prompts.length = 0;
+  r = await he('POST', '/api/student/ask', { text: '결정적 힌트 주세요', sessionId: sidKH, moreHint: true });
+  ok((prompts.at(-1) || '').includes('이번 답변에서 힌트 2를 준다'), '🔑 결정적 힌트 버튼 → 힌트 2(비유·도식) 허용');
+  r = await he('POST', '/api/student/ask', { text: '2x = 8 이니까 x = 4요', sessionId: sidKH });
+  ok(r.body.reply.includes('x = 4') && r.body.reply.includes('오답노트에 적어서 인증해줘'), '학생이 풀어 내면 정답 확인 + 오답노트 인증 지시 (확인 답변은 정답 가리기 안 함)', r.body.reply);
+  const sm2 = (await admin.query('SELECT summary FROM question_sessions WHERE id=$1', [sidKH])).rows[0].summary;
+  ok(sm2.math_wrong_note_assigned === true, '오답노트 지시 후 요약이 갱신됨', sm2);
+  r = { body: { sessionId: sidKH } };
+  const savedAi = (await admin.query("SELECT content FROM messages WHERE session_id=$1 AND role='ai' ORDER BY id LIMIT 1", [r.body.sessionId])).rows[0].content;
   ok(!savedAi.includes('SUMMARY'), '대화 기록에도 요약 블록은 안 남음 (다음 질문 문맥 오염 방지)');
   r = await dir('GET', '/api/director/monitor/sessions');
   ok(r.body.some((x) => x.summary?.director_note === '이항 부호 연습 3문제 더'), '원장님 모니터링 목록에 코칭 메모 표시');

@@ -12,8 +12,8 @@
   let teachingMode = 'hint_ladder';
   const keyHint = () => teachingMode === 'key_hint';
   function applyMode() {
-    // 핵심 힌트형은 단계 표시가 필요 없고, "힌트 하나 더" 대신 "다시 쉽게 설명해 줘"
-    $('#more-hint').textContent = keyHint() ? '🙋 다시 쉽게 설명해 줘' : '💡 힌트 하나 더';
+    // 핵심 힌트형은 단계 표시가 필요 없고, "힌트 하나 더" 대신 "결정적 힌트"(힌트 2: 비유·도식)
+    $('#more-hint').textContent = keyHint() ? '🔑 결정적 힌트' : '💡 힌트 하나 더';
     if (keyHint()) $('#ladder-wrap').hidden = true;
   }
   const FB = {
@@ -306,9 +306,9 @@
     const text = $('#text').value.trim();
     if (!text && !photo && !moreHint) return;
     busy = true; updateSend();
-    if (moreHint) add('me', keyHint() ? '🙋 다시 쉽게 설명해 줘' : '💡 힌트 하나 더');
+    if (moreHint) add('me', keyHint() ? '🔑 결정적 힌트 주세요' : '💡 힌트 하나 더');
     else add('me', text, photo?.preview);
-    const body = { text: moreHint ? (text || (keyHint() ? '조금 더 쉽게 다시 설명해 줘' : '힌트 하나 더 주세요')) : text, sessionId, moreHint };
+    const body = { text: moreHint ? (text || (keyHint() ? '결정적 힌트 주세요' : '힌트 하나 더 주세요')) : text, sessionId, moreHint };
     const sent = photo && !moreHint ? photo : null;
     if (sent) body.image = { mediaType: sent.mediaType, base64: sent.base64 };
     $('#text').value = ''; autoGrow(); $('#preview').hidden = true; if (sent) photo = null;

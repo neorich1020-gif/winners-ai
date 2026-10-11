@@ -104,16 +104,16 @@ async function answer(client, { academy, cls, student, sessionId, text, wantMore
   const keyHint = academy.teaching_mode === 'key_hint';
   const res = await anthropic.messages.create({
     model: MODEL,
-    max_tokens: keyHint ? 1200 : 600,   // 핵심 힌트형은 수학 풀이 전체 + 요약을 쓰므로 길게
+    max_tokens: keyHint ? 1200 : 600,   // 핵심 힌트형은 3칸(퀴즈·흐름·단서) + 요약을 쓰므로 길게
     temperature: 0.4,
     system: buildSystemPrompt({ academy, cls, student, materials, hintLevel: session.hint_level, hasImage: !!lastImg }),
     messages: msgs,
   });
   const raw = res.content.filter((b) => b.type === 'text').map((b) => b.text).join('');
   const { summary } = extractSummary(raw);
-  // 핵심 힌트형 수학은 원장님 방침상 풀이 전체를 보여 주므로 '정답 노출' 검사를 하지 않는다
-  const skipLeak = keyHint && cls.subject === 'math';
-  const out = skipLeak ? parseModelOutput(raw) : postCheck(parseModelOutput(raw), session.hint_level);
+  // 정답 노출 검사: 핵심 힌트형은 학생 답·오답노트를 확인하는 [CHECK] 답변에서는 정답을 말해도 되므로 건너뛴다
+  const parsed = parseModelOutput(raw);
+  const out = keyHint && parsed.verdict === 'check' ? parsed : postCheck(parsed, keyHint ? 0 : session.hint_level);
 
   const saved = (await client.query(
     'INSERT INTO messages (academy_id, session_id, role, content, verdict) VALUES ($1,$2,$3,$4,$5) RETURNING id',
