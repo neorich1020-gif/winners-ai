@@ -4,7 +4,7 @@ const bcrypt = require('bcryptjs');
 const rateLimit = require('express-rate-limit');
 const { pool, withTenant, audit } = require('../lib/db');
 const { signStaff, requireAuth, cookieOpts, encrypt, decrypt, hmac, normalizePhone } = require('../lib/security');
-const { toCard, listPlans, getPlan, capacityStatus, photoUsage } = require('../lib/plans');
+const { toCard, listPlans, getPlan, capacityStatus, photoUsage, feedbackUsage } = require('../lib/plans');
 
 const r = express.Router();
 const auth = requireAuth('staff');
@@ -24,18 +24,20 @@ r.post('/login', rateLimit({ windowMs: 15 * 60e3, limit: 8 }), async (req, res) 
 r.get('/persona', auth, async (req, res) => {
   res.json(await T(req, async (c) => (await c.query(
     `SELECT name, director_name, persona_name, persona_style, persona_examples, report_weekday, report_time, report_enabled,
-            counsel_tone, counsel_signature, stats_fallback FROM academies WHERE id=$1`, [req.user.aid])).rows[0]));
+            counsel_tone, counsel_signature, stats_fallback, COALESCE(teaching_mode,'hint_ladder') AS teaching_mode FROM academies WHERE id=$1`, [req.user.aid])).rows[0]));
 });
 r.put('/persona', auth, ownerOnly, async (req, res) => {
   const b = req.body || {};
   await T(req, (c) => c.query(
     `UPDATE academies SET persona_name=$2, persona_style=$3, persona_examples=$4,
        report_weekday=$5, report_time=$6, report_enabled=$7,
-       counsel_tone=COALESCE($8, counsel_tone), counsel_signature=COALESCE($9, counsel_signature), stats_fallback=$10 WHERE id=$1`,
+       counsel_tone=COALESCE($8, counsel_tone), counsel_signature=COALESCE($9, counsel_signature), stats_fallback=$10,
+       teaching_mode=COALESCE($11, teaching_mode) WHERE id=$1`,
     [req.user.aid, String(b.persona_name || '원장쌤').slice(0, 20), String(b.persona_style || '').slice(0, 800),
      String(b.persona_examples || '').slice(0, 2000), Number(b.report_weekday ?? 5), b.report_time || '18:00', b.report_enabled !== false,
      b.counsel_tone != null ? String(b.counsel_tone).slice(0, 600) : null,
-     b.counsel_signature != null ? String(b.counsel_signature).slice(0, 60) : null, b.stats_fallback !== false]));
+     b.counsel_signature != null ? String(b.counsel_signature).slice(0, 60) : null, b.stats_fallback !== false,
+     ['hint_ladder', 'key_hint'].includes(b.teaching_mode) ? b.teaching_mode : null]));
   res.json({ ok: true });
 });
 
@@ -48,12 +50,14 @@ async function planSummary(c, aid) {
   const sub = (await c.query('SELECT card_label, next_billing_at FROM subscriptions WHERE academy_id=$1', [aid])).rows[0];
   const active = (await c.query('SELECT count(*)::int AS n FROM students WHERE active')).rows[0].n; // RLS로 이 학원만
   const photo = await photoUsage(c, aid, plan);
+  const fb = await feedbackUsage(c, aid, plan);
   return {
     academy: { name: a.name, director_name: a.director_name, contact_phone: a.contact_phone, plan_status: a.plan_status, trial_ends_at: a.trial_ends_at },
     plan: { ...toCard(plan), monthlyKrw: a.price_locked_krw ?? plan.price_krw, priceLocked: a.price_locked_krw != null },
     activeStudents: active,
     capacity: capacityStatus(active, plan, plans),
     photo: { ...photo, exhausted: photo.limit != null && photo.remaining === 0 },  // 라이트: 이번 달 사진 질문 잔여
+    feedback: { ...fb, exhausted: fb.limit != null && fb.remaining === 0 },       // 라이트: 이번 달 첨삭 잔여
     billing: sub ? { card: sub.card_label, nextBillingAt: sub.next_billing_at } : null,
     plans: plans.map(toCard),
   };
@@ -162,10 +166,10 @@ r.get('/monitor/overview', auth, async (req, res) => {
               count(*) FILTER (WHERE status='solved')::int AS solved,
               count(DISTINCT student_id)::int AS active_students,
               round(avg(hint_level)::numeric,1) AS avg_hint
-         FROM question_sessions WHERE started_at > now() - interval '7 days'`)).rows[0];
+         FROM question_sessions WHERE kind='question' AND started_at > now() - interval '7 days'`)).rows[0];
     const topics = (await c.query(
       `SELECT topic, count(*)::int AS n, round(avg(hint_level)::numeric,1) AS avg_hint
-         FROM question_sessions WHERE topic IS NOT NULL AND started_at > now() - interval '7 days'
+         FROM question_sessions WHERE topic IS NOT NULL AND kind='question' AND started_at > now() - interval '7 days'
         GROUP BY topic ORDER BY n DESC LIMIT 8`)).rows;
     const flags = (await c.query(
       `SELECT f.id, s.nickname, f.category, f.created_at FROM safety_flags f JOIN students s ON s.id=f.student_id
@@ -176,7 +180,7 @@ r.get('/monitor/overview', auth, async (req, res) => {
 
 r.get('/monitor/sessions', auth, async (req, res) => {
   res.json(await T(req, async (c) => (await c.query(
-    `SELECT q.id, s.nickname, q.topic, q.hint_level, q.status, q.started_at
+    `SELECT q.id, s.nickname, q.topic, q.hint_level, q.status, q.started_at, q.kind, q.summary
        FROM question_sessions q JOIN students s ON s.id=q.student_id
       ORDER BY q.started_at DESC LIMIT 100`)).rows));
 });
@@ -186,6 +190,26 @@ r.get('/monitor/sessions/:id', auth, async (req, res) => {
     await audit(c, { academyId: req.user.aid, actor: `staff:${req.user.sub}`, action: 'view_session', target: req.params.id, ip: req.ip });
     return (await c.query("SELECT role, content, verdict, created_at FROM messages WHERE session_id=$1 AND role<>'system' ORDER BY id", [req.params.id])).rows;
   }));
+});
+
+// ---------- 영작·풀이 첨삭 기록 ----------
+// 학생별 최근 첨삭(고친 표현까지 전부) + 이번 주 실수 유형 요약 → 학생별 약점 확인·상담 준비용
+r.get('/feedback', auth, async (req, res, next) => {
+  try {
+    const sid = req.query.studentId;
+    if (sid && !/^[0-9a-f-]{36}$/i.test(String(sid))) return res.status(400).json({ error: '잘못된 학생' });
+    res.json(await T(req, async (c) => {
+      const rows = (await c.query(
+        `SELECT f.id, f.student_id, s.nickname, f.subject, f.stage, f.transcript, f.items, f.error_count, f.fixed_count,
+                f.retries, f.praise, f.created_at
+           FROM feedback_reviews f JOIN students s ON s.id=f.student_id
+          WHERE ($1::uuid IS NULL OR f.student_id=$1)
+          ORDER BY f.created_at DESC LIMIT 50`, [sid || null])).rows;
+      const week = rows.filter((r) => Date.now() - new Date(r.created_at) < 7 * 86400e3).reverse();
+      const { summarizeReviews } = require('../ai/feedback');
+      return { reviews: rows, week: summarizeReviews(week) };
+    }));
+  } catch (e) { next(e); }
 });
 
 r.post('/monitor/flags/:id/resolve', auth, async (req, res) => {

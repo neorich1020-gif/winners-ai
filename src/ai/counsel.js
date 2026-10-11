@@ -8,6 +8,7 @@
 // =====================================================================
 const Anthropic = require('@anthropic-ai/sdk');
 const { maskPII } = require('../lib/security');
+const { feedbackLine } = require('./feedback');
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const MODEL = process.env.AI_REPORT_MODEL || process.env.AI_MODEL || 'claude-haiku-4-5-20251001';
@@ -15,14 +16,26 @@ const MODEL = process.env.AI_REPORT_MODEL || process.env.AI_MODEL || 'claude-hai
 const MAX_CHARS = Number(process.env.COUNSEL_MAX_CHARS || 800); // 알림톡 1건 1,000자 한도 - 머리말·서명 여유
 const MAX_GEN_PER_NOTE = 5;                                       // 학생 1명·1주 재생성 한도 (비용 상한)
 
+function notesLine(n) {
+  if (!n) return '';
+  return [
+    n.weakness.length ? `튜터 대화에서 막혔던 부분: ${n.weakness.join(' / ')}` : '',
+    n.wrongNotes ? `오답노트 작성 지시 ${n.wrongNotes}회` : '',
+    n.director.length ? `튜터 코칭 메모(원장님 참고): ${n.director.join(' / ')}` : '',
+    n.cheering.length ? `칭찬 포인트: ${n.cheering[0]}` : '',
+  ].filter(Boolean).join('\n');
+}
+
 function statsLine(s) {
-  if (!s || !s.questions) return '이번 주 AI 질문창 이용 기록 없음';
+  const fb = [feedbackLine(s?.feedback), notesLine(s?.notes)].filter(Boolean).join('\n');
+  if (!s || !s.questions) return ['이번 주 AI 질문창 이용 기록 없음', fb].filter(Boolean).join('\n');
   const rate = Math.round((s.solved / s.questions) * 100);
   return [
     `학습일 ${s.days}일, 질문한 문제 ${s.questions}개, 스스로 해결 ${rate}%, 평균 힌트 ${s.avg_hint}단계`,
     s.topics?.length ? `질문한 단원: ${s.topics.join(', ')}` : '',
     s.weak?.length ? `힌트를 많이 받은 단원: ${s.weak.join(', ')}` : '',
     s.strong?.length ? `거의 혼자 해결한 단원: ${s.strong.join(', ')}` : '',
+    fb,
   ].filter(Boolean).join('\n');
 }
 
@@ -44,7 +57,9 @@ ${academy.persona_examples ? `원장님이 자주 쓰는 표현(분위기만 참
 - 학습 상태/진도: ${maskPII(note.progress) || '(미입력)'}
 - 수업 태도/특이사항: ${maskPII(note.attitude) || '(미입력)'}
 
-# AI 질문창 자동 기록 (참고용, 숫자는 꼭 필요할 때만 1~2개)
+# AI 질문창·첨삭 자동 기록 (참고용, 숫자는 꼭 필요할 때만 1~2개)
+# 튜터 대화 요약이 있으면 "막혔던 부분"은 보완 계획으로, "칭찬 포인트"는 칭찬 문단에 자연스럽게 녹이고, "코칭 메모"는 그대로 옮기지 말고 학원의 다음 주 계획 문장으로 바꿔 쓴다.
+# 첨삭 기록이 있으면 "자주 나온 실수 유형"과 "스스로 고친 것"을 한 문장으로 자연스럽게 넣는다(실수형/개념형 판단이 있으면 학원 계획과 연결).
 ${statsLine(stats)}
 
 # 쓰는 법

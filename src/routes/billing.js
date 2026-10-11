@@ -72,7 +72,7 @@ async function chargeAcademy(academyId) {
 
   try {
     const pay = await toss(`/billing/${decrypt(sub.billing_key_enc)}`, {
-      customerKey: sub.customer_key, amount: sub.amount_krw, orderId, orderName: `AI 원장쌤 ${price.name} (${ym})`,
+      customerKey: sub.customer_key, amount: sub.amount_krw, orderId, orderName: `멘트윈 ${price.name} (${ym})`,
     });
     await withTenant(academyId, (c) => c.query(
       `INSERT INTO payments (academy_id, order_id, amount_krw, status, payment_key) VALUES ($1,$2,$3,'DONE',$4)

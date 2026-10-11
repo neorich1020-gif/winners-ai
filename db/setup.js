@@ -5,6 +5,7 @@
 //      - 계정이 테이블 주인이어도 학원 분리(RLS)가 적용되도록 FORCE
 //      - 스케줄러 연결(app.bypass_rls=on)만 여러 학원을 볼 수 있게 정책 수정
 //      - QR 조회·상담글 링크 함수(db/functions.sql)는 함수 안에서만 잠깐 우회
+//   1-1) db/migrations.sql: 새 기능 표·열 추가 (매번, 멱등)
 //   3) DEMO_STUDENT_PIN이 있고 학원이 하나도 없으면 체험용 반·학생 생성
 // 여러 번 실행해도 결과가 같고(멱등), 서버가 여러 대여도 DB 잠금으로 한 번만 실행된다.
 // =====================================================================
@@ -29,6 +30,8 @@ async function main() {
       console.log('[setup] 테이블이 이미 있습니다');
     }
     await c.query(fs.readFileSync(path.join(__dirname, 'functions.sql'), 'utf8'));
+    // 새 기능용 변경(첨삭 등) — 이미 운영 중인 DB에도 자동 반영, 여러 번 실행해도 안전
+    await c.query(fs.readFileSync(path.join(__dirname, 'migrations.sql'), 'utf8'));
 
     // 2) 단일 계정용 학원 분리 (BYPASSRLS 계정을 따로 쓰는 경우 USE_DB_ROLES=1 로 건너뜀)
     if (process.env.USE_DB_ROLES !== '1') {
@@ -63,13 +66,28 @@ async function main() {
           const cl = (await c.query(
             `INSERT INTO classes (academy_id, name, subject, grade_band, qr_token) VALUES ($1,'체험반','math','middle',$2) RETURNING id`,
             [a.id, token])).rows[0];
+          const pinHash = await bcrypt.hash(pin, 10);
           await c.query(
             `INSERT INTO students (academy_id, class_id, nickname, login_code, pin_hash, is_under_14) VALUES ($1,$2,'체험학생','1',$3,false)`,
-            [a.id, cl.id, await bcrypt.hash(pin, 10)]);
+            [a.id, cl.id, pinHash]);
+          // 영어 영작 첨삭 체험용 반 (같은 출석번호·비밀번호)
+          const en = (await c.query(
+            `INSERT INTO classes (academy_id, name, subject, grade_band, qr_token) VALUES ($1,'영어 체험반','english','middle',$2) RETURNING id`,
+            [a.id, token + '-en'])).rows[0];
+          await c.query(
+            `INSERT INTO students (academy_id, class_id, nickname, login_code, pin_hash, is_under_14) VALUES ($1,$2,'체험학생','1',$3,false)`,
+            [a.id, en.id, pinHash]);
           await c.query('COMMIT');
           console.log('[setup] 체험용 반·학생을 만들었습니다');
         }
-        console.log(`[setup] 학생 체험 주소: ${(process.env.APP_BASE_URL || process.env.RENDER_EXTERNAL_URL || '').replace(/\/$/, '')}/s/${token}  (출석번호 1, 비밀번호는 DEMO_STUDENT_PIN)`);
+        // 체험 학원(위너스학원)은 원장님이 고른 '핵심 힌트형' 지도 방식으로 시작 (원장님이 따로 바꾼 적 없을 때만)
+        await c.query(
+          `UPDATE academies SET teaching_mode='key_hint'
+            WHERE teaching_mode IS NULL AND id IN (SELECT academy_id FROM classes WHERE qr_token IN ($1, $2))`,
+          [token, token + '-en']);
+        const base = (process.env.APP_BASE_URL || process.env.RENDER_EXTERNAL_URL || '').replace(/\/$/, '');
+        console.log(`[setup] 학생 체험 주소: ${base}/s/${token}  (출석번호 1, 비밀번호는 DEMO_STUDENT_PIN)`);
+        console.log(`[setup] 영어 첨삭 체험 주소: ${base}/s/${token}-en`);
       }
     }
   } finally {

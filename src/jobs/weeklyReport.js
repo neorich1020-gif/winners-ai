@@ -13,6 +13,7 @@
 const { SolapiMessageService } = require('solapi');
 const { batchPool: pool } = require('../lib/db'); // 여러 학원을 다루는 배치 → RLS 우회 계정
 const { decrypt } = require('../lib/security');
+const { summarizeReviews } = require('../ai/feedback');
 
 const DRY = process.env.DRY_RUN === '1';
 const sms = DRY ? null : new SolapiMessageService(process.env.SOLAPI_API_KEY, process.env.SOLAPI_API_SECRET);
@@ -37,19 +38,43 @@ async function buildStats(academyId, studentId, weekStart, db = pool) {
             count(DISTINCT date(started_at AT TIME ZONE 'Asia/Seoul'))::int AS days,
             coalesce(round(avg(hint_level)::numeric,1),0) AS avg_hint
        FROM question_sessions
-      WHERE academy_id=$1 AND student_id=$2
+      WHERE academy_id=$1 AND student_id=$2 AND kind='question'
         AND started_at >= ($3::date AT TIME ZONE 'Asia/Seoul')
         AND started_at <  (($3::date + 7) AT TIME ZONE 'Asia/Seoul')`,
     [academyId, studentId, weekStart])).rows[0];
   const topics = (await db.query(
     `SELECT topic, count(*)::int AS n, avg(hint_level) AS h FROM question_sessions
-      WHERE academy_id=$1 AND student_id=$2 AND topic IS NOT NULL
+      WHERE academy_id=$1 AND student_id=$2 AND topic IS NOT NULL AND kind='question'
         AND started_at >= ($3::date AT TIME ZONE 'Asia/Seoul')
+        AND started_at <  (($3::date + 7) AT TIME ZONE 'Asia/Seoul')
       GROUP BY topic ORDER BY n DESC LIMIT 5`,
     [academyId, studentId, weekStart])).rows;
   const strong = topics.filter((t) => t.h < 1.5).map((t) => t.topic).slice(0, 2);
   const weak = topics.filter((t) => t.h >= 2.5).map((t) => t.topic).slice(0, 2);
-  return { ...q, topics: topics.map((t) => t.topic), strong, weak };
+  // 튜터가 남긴 대화 요약 (막힌 부분·원장님 코칭 메모·학부모 칭찬 한 줄·오답노트 지시)
+  const sums = (await db.query(
+    `SELECT summary FROM question_sessions
+      WHERE academy_id=$1 AND student_id=$2 AND kind='question' AND summary IS NOT NULL
+        AND started_at >= ($3::date AT TIME ZONE 'Asia/Seoul')
+        AND started_at <  (($3::date + 7) AT TIME ZONE 'Asia/Seoul')
+      ORDER BY started_at DESC LIMIT 20`,
+    [academyId, studentId, weekStart])).rows.map((r) => r.summary);
+  const uniq = (arr, n) => [...new Set(arr.filter(Boolean))].slice(0, n);
+  const notes = sums.length ? {
+    weakness: uniq(sums.map((x) => x.weakness_point), 3),
+    director: uniq(sums.map((x) => x.director_note), 2),
+    cheering: uniq(sums.map((x) => x.parent_cheering_msg), 1),
+    wrongNotes: sums.filter((x) => x.math_wrong_note_assigned).length,
+  } : null;
+  // 영작·풀이 첨삭 (상담글 초안과 원장 화면에 사용, 학부모 자동 리포트 템플릿에는 넣지 않음)
+  const reviews = (await db.query(
+    `SELECT subject, error_count, fixed_count, items FROM feedback_reviews
+      WHERE academy_id=$1 AND student_id=$2
+        AND created_at >= ($3::date AT TIME ZONE 'Asia/Seoul')
+        AND created_at <  (($3::date + 7) AT TIME ZONE 'Asia/Seoul')
+      ORDER BY created_at`,
+    [academyId, studentId, weekStart])).rows;
+  return { ...q, topics: topics.map((t) => t.topic), strong, weak, feedback: summarizeReviews(reviews), notes };
 }
 
 // ---- 2. 알림톡 변수 (승인된 템플릿의 #{변수}와 1:1 일치해야 함) ----

@@ -5,7 +5,8 @@ const rateLimit = require('express-rate-limit');
 const { pool, withTenant } = require('../lib/db');
 const { signStudent, requireAuth, cookieOpts, STUDENT_HOURS } = require('../lib/security');
 const tutor = require('../ai/tutor');
-const { getPlan, photoUsage } = require('../lib/plans');
+const feedback = require('../ai/feedback');
+const { getPlan, photoUsage, feedbackUsage } = require('../lib/plans');
 
 const r = express.Router();
 
@@ -17,6 +18,12 @@ const dailyLimiter = rateLimit({ windowMs: 24 * 3600e3, limit: 150, keyGenerator
 // 사진 질문은 글보다 비용이 커서 따로 하루 30장 한도
 const photoLimiter = rateLimit({ windowMs: 24 * 3600e3, limit: 30, keyGenerator: (req) => req.user.sub,
   skip: (req) => !req.body?.image, message: { error: '오늘 사진 질문은 다 썼어. 문제를 글로 적어서 물어봐 줘!' } });
+
+// 첨삭은 학생 1명당 하루 15회(새 첨삭 + 고쳐 쓰기 확인 합산), 분당 4회
+const feedbackLimiter = rateLimit({ windowMs: 24 * 3600e3, limit: Number(process.env.FEEDBACK_PER_DAY || 15), keyGenerator: (req) => req.user.sub,
+  message: { error: '오늘 첨삭은 여기까지! 내일 또 올려 줘.' } });
+const feedbackBurst = rateLimit({ windowMs: 60e3, limit: Number(process.env.FEEDBACK_PER_MINUTE || 4), keyGenerator: (req) => req.user.sub,
+  message: { error: '잠깐! 천천히 하나씩 올려 줘.' } });
 
 // QR 링크(/s/:token)가 처음 호출 → 반 이름, 학원 이름만 공개
 r.get('/class/:token', async (req, res) => {
@@ -44,11 +51,15 @@ r.get('/me', requireAuth('student'), async (req, res, next) => {
   try {
     const out = await withTenant(req.user.aid, async (c) => {
       const st = (await c.query(
-        `SELECT s.nickname, c.qr_token, a.plan_code FROM students s JOIN classes c ON c.id=s.class_id JOIN academies a ON a.id=s.academy_id
+        `SELECT s.nickname, c.qr_token, c.subject, a.plan_code, a.teaching_mode FROM students s JOIN classes c ON c.id=s.class_id JOIN academies a ON a.id=s.academy_id
           WHERE s.id=$1 AND s.active`, [req.user.sub])).rows[0];
       if (!st) return null;
-      const photo = await photoUsage(c, req.user.aid, await getPlan(c, st.plan_code)); // 라이트면 이번 달 남은 사진 질문 수
-      return { nickname: st.nickname, classToken: st.qr_token, photo };
+      const plan = await getPlan(c, st.plan_code);
+      const photo = await photoUsage(c, req.user.aid, plan); // 라이트면 이번 달 남은 사진 질문 수
+      const fb = await feedbackUsage(c, req.user.aid, plan);  // 라이트면 이번 달 남은 첨삭 수
+      const fbSubject = ['english', 'math'].includes(st.subject) ? st.subject : null;
+      return { nickname: st.nickname, classToken: st.qr_token, photo, feedback: { ...fb, subject: fbSubject },
+        teachingMode: st.teaching_mode === 'key_hint' ? 'key_hint' : 'hint_ladder' };
     });
     if (!out) return res.status(401).json({ error: '다시 로그인해 주세요' });
     res.json(out);
@@ -71,6 +82,35 @@ r.post('/ask', requireAuth('student'), askLimiter, dailyLimiter, photoLimiter, a
       return tutor.answer(c, { academy, cls, student, sessionId, text: String(text || ''), wantMoreHint: !!moreHint, image });
     });
     res.json(out);
+  } catch (e) { next(e); }
+});
+
+// ---------- 영어 영작 · 수학 풀이 첨삭 ----------
+async function studentCtx(c, req) {
+  const academy = (await c.query('SELECT * FROM academies WHERE id=$1', [req.user.aid])).rows[0];
+  const cls = (await c.query('SELECT * FROM classes WHERE id=$1', [req.user.cid])).rows[0];
+  const student = (await c.query('SELECT id, nickname, class_id FROM students WHERE id=$1 AND active', [req.user.sub])).rows[0];
+  if (!student) throw Object.assign(new Error('inactive'), { status: 401 });
+  return { academy, cls, student };
+}
+// 처음 첨삭: { text?, image?, subject? }  → 틀린 위치·유형·힌트만 (고친 표현은 아직 안 보냄)
+r.post('/feedback', requireAuth('student'), feedbackBurst, feedbackLimiter, photoLimiter, async (req, res, next) => {
+  try {
+    const { text, image, subject } = req.body || {};
+    res.json(await withTenant(req.user.aid, async (c) => feedback.createReview(c, await studentCtx(c, req), { text, image, subject })));
+  } catch (e) { next(e); }
+});
+// 고쳐 쓴 글 / 다시 푼 풀이 확인 (횟수 차감 없음, 최대 2번)
+r.post('/feedback/:id/retry', requireAuth('student'), feedbackBurst, feedbackLimiter, photoLimiter, async (req, res, next) => {
+  try {
+    const { text, image } = req.body || {};
+    res.json(await withTenant(req.user.aid, async (c) => feedback.retryReview(c, await studentCtx(c, req), req.params.id, { text, image })));
+  } catch (e) { next(e); }
+});
+// 영어 "잘 모르겠어요" → 고친 표현·이유 바로 공개
+r.post('/feedback/:id/reveal', requireAuth('student'), async (req, res, next) => {
+  try {
+    res.json(await withTenant(req.user.aid, async (c) => feedback.revealReview(c, await studentCtx(c, req), req.params.id)));
   } catch (e) { next(e); }
 });
 

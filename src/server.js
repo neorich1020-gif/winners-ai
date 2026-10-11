@@ -27,7 +27,9 @@ app.use(helmet({
 }));
 // 사진 질문만 큰 요청(최대 6MB: 4MB 사진의 base64 + 여유)을 허용하고, 나머지는 100KB로 제한
 const bigJson = express.json({ limit: '6mb' }), smallJson = express.json({ limit: '100kb' });
-app.use((req, res, next) => (req.path === '/api/student/ask' ? bigJson : smallJson)(req, res, next));
+// 사진을 받는 주소(질문·첨삭)만 6MB, 나머지는 100KB
+const PHOTO_PATHS = /^\/api\/student\/(ask|feedback(\/[0-9a-f-]{36}\/retry)?)$/i;
+app.use((req, res, next) => (PHOTO_PATHS.test(req.path) ? bigJson : smallJson)(req, res, next));
 app.use(cookieParser());
 
 app.use('/api/student', require('./routes/student'));
@@ -86,11 +88,18 @@ app.use(express.static(path.join(__dirname, '..', 'public'), { maxAge: '1h' }));
 app.get('/s/:token', (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'student.html')));
 // 원장 대시보드: 실제 화면을 React로 이식하기 전까지는 시연판을 보여 준다 (API는 /api/director/* 에 모두 준비됨)
 app.get('/director', (req, res) => res.redirect('/prototype.html#director'));
+// 주소만 입력하고 들어온 경우: 원장님용 소개(랜딩) 화면으로
+app.get('/', (req, res) => res.redirect('/prototype.html#landing'));
 
 // 에러는 학생/원장에게 내부 정보를 노출하지 않음
 app.use((err, req, res, _next) => {
   console.error('[error]', req.method, req.path, err.message);
   // 4xx는 우리가 만든 안내 문구(예: "키워드를 적어 주세요")만 그대로 보여 주고, 5xx는 감춘다
+  // Claude API 오류(키 오류 401, 크레딧 부족 400, 과부하 429/529 등)는 학생 로그인 문제가 아니므로
+  // 그대로 넘기지 않고 503 "잠시 후" 안내로 바꾼다 (401을 넘기면 학생 화면이 로그아웃됨)
+  if (err.headers && err.status && !err.code) {
+    return res.status(503).json({ error: 'AI 선생님 연결이 잠깐 안 돼요. 잠시 후 다시 보내 줘!' });
+  }
   const status = err.status || 500;
   // code/extra: 화면이 상황별 안내(예: 사진 한도 소진 → 업그레이드 팝업)를 띄울 수 있게 함께 보냄
   res.status(status).json(status < 500 ? { error: err.message, code: err.code, ...(err.extra || {}) } : { error: '잠시 후 다시 시도해 주세요' });
@@ -119,4 +128,4 @@ cron.schedule('30 3 * * *', () => once(1003, async () => {                      
 }), TZ);
 
 const port = process.env.PORT || 8080;
-app.listen(port, () => console.log(`AI 원장쌤 서버 실행 중 :${port}`));
+app.listen(port, () => console.log(`멘트윈 서버 실행 중 :${port}`));

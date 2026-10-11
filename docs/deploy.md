@@ -29,7 +29,7 @@ DB 테이블과 학원별 분리 설정은 서버가 켜질 때 `db/setup.js`가
 | 2 | Render | GitHub 계정으로 가입 → 결제 카드 등록 |
 | 3 | Render | **New → Blueprint** → `winners-ai` 저장소 **Connect** |
 | 4 | Render | 입력칸 2개 채우기: `ANTHROPIC_API_KEY`(Claude API 키), `DEMO_STUDENT_PIN`(체험 학생 비밀번호 숫자 4자리) → **Deploy Blueprint** |
-| 5 | Render | 서버의 **Logs**에서 `학생 체험 주소: …/s/winners-demo` 확인 → 휴대폰으로 접속, 출석번호 `1` + PIN |
+| 5 | Render | 서버의 **Logs**에서 `학생 체험 주소: …/s/winners-demo` 확인 → 휴대폰으로 접속, 출석번호 `1` + PIN. 영어 첨삭은 `…/s/winners-demo-en` |
 | 6 | 가비아·Cloudflare 등 | 도메인 구입 → Render **Settings → Custom Domains**에 `app.도메인` 추가 → 알려 주는 CNAME을 도메인 회사 DNS에 입력 → **Verify** |
 | 7 | Render | **Environment**에 `APP_BASE_URL=https://app.도메인` 추가 → 저장(자동 재배포) |
 | 8 | Render | 카카오 템플릿 승인 후 `SOLAPI_API_KEY`, `SOLAPI_API_SECRET`, `KAKAO_PF_ID`, `KAKAO_TEMPLATE_WEEKLY`, `KAKAO_TEMPLATE_COUNSEL` 추가 → 원장님 번호로 1건 시험 → `DRY_RUN=0` |

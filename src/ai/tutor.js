@@ -1,6 +1,6 @@
 // 학생 질문 1건 처리: 사전필터 → 프롬프트 구성 → Claude 호출(글 + 사진) → 사후검사 → 저장
 const Anthropic = require('@anthropic-ai/sdk');
-const { buildSystemPrompt, preFilter, parseModelOutput, postCheck } = require('./prompt');
+const { buildSystemPrompt, preFilter, parseModelOutput, postCheck, extractSummary } = require('./prompt');
 const { maskPII } = require('../lib/security');
 const { getPlan, consumePhoto } = require('../lib/plans');
 
@@ -39,7 +39,7 @@ async function answer(client, { academy, cls, student, sessionId, text, wantMore
   // 세션 확보 (없으면 새 문제로 시작). 사진은 보통 새 문제이므로 sessionId가 없으면 새 세션.
   let session;
   if (sessionId) {
-    session = (await client.query('SELECT * FROM question_sessions WHERE id=$1 AND student_id=$2', [sessionId, student.id])).rows[0];
+    session = (await client.query("SELECT * FROM question_sessions WHERE id=$1 AND student_id=$2 AND kind='question'", [sessionId, student.id])).rows[0];
   }
   if (!session) {
     session = (await client.query(
@@ -101,27 +101,34 @@ async function answer(client, { academy, cls, student, sessionId, text, wantMore
     ];
   }
 
+  const keyHint = academy.teaching_mode === 'key_hint';
   const res = await anthropic.messages.create({
     model: MODEL,
-    max_tokens: 600,
+    max_tokens: keyHint ? 1200 : 600,   // 핵심 힌트형은 수학 풀이 전체 + 요약을 쓰므로 길게
     temperature: 0.4,
     system: buildSystemPrompt({ academy, cls, student, materials, hintLevel: session.hint_level, hasImage: !!lastImg }),
     messages: msgs,
   });
   const raw = res.content.filter((b) => b.type === 'text').map((b) => b.text).join('');
-  const out = postCheck(parseModelOutput(raw), session.hint_level);
+  const { summary } = extractSummary(raw);
+  // 핵심 힌트형 수학은 원장님 방침상 풀이 전체를 보여 주므로 '정답 노출' 검사를 하지 않는다
+  const skipLeak = keyHint && cls.subject === 'math';
+  const out = skipLeak ? parseModelOutput(raw) : postCheck(parseModelOutput(raw), session.hint_level);
 
   const saved = (await client.query(
     'INSERT INTO messages (academy_id, session_id, role, content, verdict) VALUES ($1,$2,$3,$4,$5) RETURNING id',
     [academy.id, session.id, 'ai', out.text, out.leaked ? 'hint_leak_blocked' : out.verdict])).rows[0];
 
   if (out.topic) await client.query('UPDATE question_sessions SET topic=COALESCE(topic,$1) WHERE id=$2', [out.topic, session.id]);
+  // 학생에게 보이지 않는 요약(막힌 부분·코칭 메모·학부모 칭찬 한 줄) → 원장님 화면과 금요일 상담글 초안에 사용
+  if (summary) await client.query('UPDATE question_sessions SET summary=$1 WHERE id=$2', [JSON.stringify(summary), session.id]);
   if (out.verdict === 'safety') {
     await client.query("UPDATE question_sessions SET status='flagged' WHERE id=$1", [session.id]);
     await client.query('INSERT INTO safety_flags (academy_id, student_id, message_id, category) VALUES ($1,$2,$3,$4)',
       [academy.id, student.id, saved.id, 'wellbeing']);
   }
-  return { sessionId: session.id, hintLevel: session.hint_level, reply: out.text, safety: out.verdict === 'safety', withImage: !!img, photo };
+  return { sessionId: session.id, hintLevel: session.hint_level, reply: out.text, safety: out.verdict === 'safety', withImage: !!img, photo,
+    teachingMode: keyHint ? 'key_hint' : 'hint_ladder' };
 }
 
 module.exports = { answer, parseImage, MAX_IMAGE_BYTES };

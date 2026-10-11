@@ -1,7 +1,7 @@
 // 실행 전 준비: PostgreSQL(127.0.0.1:54329, postgres/pw)에 db/schema.sql, db/functions.sql, db/roles.sql 적용 후
 //   node tests/integration.js            (계정 2개 방식)
 //   TEST_DB_URL=<단일 계정 주소> node tests/integration.js   (Render처럼 계정 1개 + node db/setup.js 후)
-// AI는 가짜 응답, 알림톡은 DRY_RUN — 실제 발송·과금 없음 · 통합 테스트 90개
+// AI는 가짜 응답, 알림톡은 DRY_RUN — 실제 발송·과금 없음 · 통합 테스트 140개
 // 주간 상담글 기능 통합 테스트: 실제 PostgreSQL + 실제 서버 + DRY_RUN 발송 (AI만 가짜 응답)
 const crypto = require('crypto');
 Object.assign(process.env, {
@@ -9,9 +9,12 @@ Object.assign(process.env, {
   DATABASE_URL: 'postgres://app_user:change-me-app@127.0.0.1:54329/winners_ai',
   DATABASE_URL_BATCH: 'postgres://batch_user:change-me-batch@127.0.0.1:54329/winners_ai',
   JWT_SECRET: crypto.randomBytes(32).toString('hex'), PII_ENC_KEY: crypto.randomBytes(32).toString('base64'),
-  PII_HASH_KEY: crypto.randomBytes(32).toString('hex'), DRY_RUN: '1', ASK_PER_MINUTE: '100',
+  PII_HASH_KEY: crypto.randomBytes(32).toString('hex'), DRY_RUN: '1', ASK_PER_MINUTE: '100', FEEDBACK_PER_MINUTE: '100', FEEDBACK_PER_DAY: '100',
   KAKAO_TEMPLATE_WEEKLY: 'TPL_WEEKLY', KAKAO_TEMPLATE_COUNSEL: 'TPL_COUNSEL', SENDER_PHONE: '01020005369',
 });
+// 요일에 따라 '이번 주 상담 표'가 다음 주로 넘어가므로, 금요일 발송 이후(토·일)에 돌릴 때는
+// TEST_NOW=2026-10-07T03:00:00Z 처럼 같은 주의 평일로 서버 시계를 맞춰서 시험한다
+if (process.env.TEST_NOW) { const off = Date.parse(process.env.TEST_NOW) - Date.now(); const real = Date.now; Date.now = () => real() + off; }
 // Render처럼 DB 계정이 하나뿐인 환경으로 시험: TEST_DB_URL=그 계정 주소
 if (process.env.TEST_DB_URL) { process.env.DATABASE_URL = process.env.TEST_DB_URL; delete process.env.DATABASE_URL_BATCH; }
 
@@ -23,14 +26,36 @@ Module._load = function (req, ...rest) {
   if (req === '@anthropic-ai/sdk') {
     return class { constructor() { this.messages = { create: async (args) => {
       prompts.push(args.system); global.lastMessages = args.messages;
+      if (args.tools) return { content: [{ type: 'tool_use', name: 'report', input: fakeFeedback(args) }] };
       if (args.system.includes('주간 상담 카카오톡 메시지')) {
         return { content: [{ type: 'text', text: '안녕하세요, 민준 학부모님. 위너스학원 김원장입니다.\n\n이번 주 수학은 일차함수 그래프와 기울기를 마쳤고, 확인 테스트도 잘 봤습니다. 집에서도 AI 질문창으로 꾸준히 물어보며 스스로 해결하는 비율이 높았어요.\n\n수업 시간에는 질문이 눈에 띄게 늘었고 오답노트도 꼼꼼했습니다. 다만 숙제를 한 번 빠뜨린 날이 있어 다음 주에는 수업 전에 제가 한 번 더 확인하겠습니다.\n\n가정에서는 오늘 배운 문제 하나만 설명해 달라고 물어봐 주세요. 궁금하신 점은 언제든 연락 주세요. 감사합니다.' }] };
+      }
+      if (args.system.includes('1:1 학습 튜터')) {
+        return { content: [{ type: 'text', text: '[HINT]\n[TOPIC: 일차방정식]\n좋아, 같이 풀어 보자!\n1) 2x + 3 = 11\n2) 2x = 8 (양쪽에서 3을 빼)\n3) x = 4 (양쪽을 2로 나눠)\n따라서 x = 4\n여기까지 이해됐니? 이해 안 가는 줄(단계)이 있다면 편하게 말해줘!\n<<SUMMARY>>{"topic":"일차방정식","weakness_point":"이항할 때 부호","math_wrong_note_assigned":true,"director_note":"이항 부호 연습 3문제 더","parent_cheering_msg":"막힌 줄을 정확히 짚어 질문했어요"}<<END>>' }] };
       }
       return { content: [{ type: 'text', text: '[HINT]\n[TOPIC: 일차방정식]\n민준아, 어디까지 해 봤어?' }] };
     } }; } };
   }
   return origLoad.call(this, req, ...rest);
 };
+
+// 첨삭 가짜 응답: 학생 글에 넣은 표시어로 상황을 고른다 (BLUR=안 보임, GAME=주제 밖, 죽고=위험 신호, PERFECT=다 맞음)
+function fakeFeedback(args) {
+  const parts = args.messages[0].content;
+  const txt = parts.filter((p) => p.type === 'text').map((p) => p.text).join(' ');
+  const base = { readable: !txt.includes('BLUR'), off_topic: txt.includes('GAME'), safety_concern: txt.includes('죽고') };
+  const sys = args.system;
+  if (sys.includes('영어 글 첨삭')) return { ...base, transcript: txt.replace(/^[^:]*:\n/, ''), praise: 'favorite 철자를 정확히 썼어!', message: '실수 2개를 찾았어. 힌트 보고 고쳐서 다시 써 볼래?',
+    items: txt.includes('PERFECT') ? [] : [
+      { original: 'I go to school yesterday', type: '시제', hint: 'went 로 바꾸면 돼!', corrected: 'I went to school yesterday', explain: '어제 일이니까 과거형 went를 써.' },
+      { original: 'a apple', type: '관사', hint: '모음 소리 앞에서 관사를 다시 확인해 봐!', corrected: 'an apple', explain: 'apple은 모음 소리로 시작해서 an을 써.' }] };
+  if (sys.includes('고쳐 쓴 글 확인')) return { ...base, message: '시제는 완벽하게 고쳤어!', results: [{ id: 1, fixed: /went/.test(txt), note: '좋아!' }, { id: 2, fixed: /an apple/.test(txt) }] };
+  if (sys.includes('수학 풀이 첨삭')) return { ...base, transcript: '1줄 2x+3=7\n2줄 2x=10', all_correct: txt.includes('PERFECT'), praise: '식을 깔끔하게 세웠어!', message: '2번째 줄부터 다시 보자.',
+    items: txt.includes('PERFECT') ? [] : [{ line: '2번째 줄: 2x + 3 = 7 → 2x = 10', type: '부호 실수', hint: '정답은 x = 2 이야' }] };
+  if (sys.includes('다시 푼 수학 풀이 확인')) return { ...base, all_correct: txt.includes('2x=4'), message: '거의 다 왔어!',
+    results: [{ id: 1, fixed: false, hint2: '+3을 오른쪽으로 넘기면 부호가 어떻게 바뀌는지 생각해 봐!' }] };
+  return base;
+}
 
 const { Pool } = require('pg');
 const admin = new Pool({ connectionString: 'postgres://postgres:pw@127.0.0.1:54329/winners_ai' });
@@ -303,6 +328,135 @@ function client() {
   const lockedRow = (await admin.query("SELECT price_locked_krw FROM academies WHERE name='스탠학원'")).rows[0];
   ok(r.status === 201 && lockedRow.price_locked_krw === 69000, '스탠다드로 가입하면 69,000원 평생 고정');
 
+
+  origLog('\n── 15. 영어 영작 · 수학 풀이 첨삭 ──');
+  await admin.query("UPDATE academies SET plan_code='lite', price_locked_krw=NULL WHERE id=$1", [A]);
+  const mjStatsBefore = (await dir('GET', '/api/director/counsel')).body.rows.find((x) => x.nickname === '민준').ai_stats.questions;
+  const fm = client();
+  await fm('POST', '/api/student/login', { token: 'qrA', code: '03', pin: '1111' });
+  r = await fm('GET', '/api/student/me');
+  ok(r.body.feedback?.subject === 'math' && r.body.feedback.limit === 30, `수학 반 학생: 풀이 첨삭, 라이트 월 30회 (${r.body.feedback?.remaining}회 남음)`, r.body);
+  r = await fm('POST', '/api/student/feedback', { text: '2x+3=7\n2x=10\nx=5  연락처 010-1234-5678' });
+  const mRv = r.body;
+  ok(r.status === 200 && mRv.subject === 'math' && mRv.stage === 'hinted' && mRv.items.length === 1, '수학 풀이 첨삭: 틀린 줄 1개 짚음', r.body);
+  ok(!/정답|x\s*=\s*2/.test(mRv.items[0].hint) && /부호/.test(mRv.items[0].hint), `AI가 힌트에 정답을 써도 걸러짐: "${mRv.items[0].hint}"`, mRv.items[0]);
+  ok(!('corrected' in mRv.items[0]) && mRv.canReveal === false && mRv.quota.remaining === 29, '수학은 고친 답 없음, 정답 공개 버튼 없음, 횟수 1 차감');
+  const tr = (await admin.query('SELECT transcript FROM feedback_reviews WHERE id=$1', [mRv.id])).rows[0];
+  const stMsg = (await admin.query("SELECT content FROM messages m JOIN feedback_reviews f ON f.session_id=m.session_id WHERE f.id=$1 AND m.role='student'", [mRv.id])).rows[0];
+  ok(stMsg.content.includes('[전화번호]') && !stMsg.content.includes('010-1234'), '학생 글의 전화번호는 저장 전에 가림');
+  r = await fm('POST', `/api/student/feedback/${mRv.id}/reveal`);
+  ok(r.status === 400, '수학은 "정답 보기" 불가', r);
+  r = await fm('POST', `/api/student/feedback/${mRv.id}/retry`, { text: '2x=10 다시 봐도 모르겠어요' });
+  ok(r.status === 200 && r.body.stage === 'retried' && /부호가 어떻게/.test(r.body.items[0].hint) && r.body.canRetry, '다시 풀어도 틀리면 더 구체적인 힌트(정답 없이)', r.body);
+  r = await fm('POST', `/api/student/feedback/${mRv.id}/retry`, { text: '2x=10' });
+  ok(r.body.canRetry === false && /수업 시간/.test(r.body.message), '2번 다시 풀어도 틀리면 "수업 시간에 같이 보자"로 마무리', r.body);
+  r = await fm('POST', `/api/student/feedback/${mRv.id}/retry`, { text: '2x=4' });
+  ok(r.status === 409, '끝난 첨삭에 더 보내면 거절', r);
+  r = await fm('POST', '/api/student/feedback', { text: '2x+3=7 2x=4 x=2 PERFECT' });
+  ok(r.body.stage === 'perfect' && r.body.items.length === 0 && r.body.canRetry === false, '다 맞으면 칭찬으로 끝', r.body);
+  r = await fm('POST', '/api/student/feedback', { text: '', image: { mediaType: 'image/jpeg', base64: jpg } });
+  const img = (global.lastMessages[0].content || []).find((p) => p.type === 'image');
+  ok(r.status === 200 && img?.source?.media_type === 'image/jpeg', '풀이 사진도 첨삭 (사진이 AI에 전달)', r.body);
+  const used1 = (await admin.query('SELECT feedback_reviews, photo_questions FROM monthly_usage WHERE academy_id=$1', [A])).rows[0];
+  r = await fm('POST', '/api/student/feedback', { text: 'BLUR' });
+  const used2 = (await admin.query('SELECT feedback_reviews FROM monthly_usage WHERE academy_id=$1', [A])).rows[0];
+  ok(r.status === 422 && r.body.code === 'UNREADABLE' && used2.feedback_reviews === used1.feedback_reviews, `안 보이는 사진은 다시 찍기 안내 + 횟수 차감 안 함 (${used2.feedback_reviews}회)`, r);
+  ok(used1.feedback_reviews === 3, '첨삭 횟수는 사진 질문 횟수와 따로 셈', used1);
+  r = await fm('POST', '/api/student/feedback', { text: 'GAME 스크린샷' });
+  ok(r.status === 422 && r.body.code === 'OFFTOPIC', '공부와 관계없는 글은 거절', r);
+
+  // 영어 반 학생
+  const enCls = (await admin.query(`INSERT INTO classes (academy_id, name, subject, grade_band, qr_token) VALUES ($1,'중2 영어','english','middle','qrE') RETURNING id`, [A])).rows[0].id;
+  const enSt = (await admin.query(`INSERT INTO students (academy_id, class_id, nickname, login_code, pin_hash) VALUES ($1,$2,'지우','05',$3) RETURNING id`, [A, enCls, pin2])).rows[0].id;
+  const fe = client();
+  await fe('POST', '/api/student/login', { token: 'qrE', code: '05', pin: '1111' });
+  r = await fe('POST', '/api/student/feedback', { text: 'My favorite food is pizza. I go to school yesterday. I ate a apple.' });
+  const eRv = r.body;
+  ok(r.status === 200 && eRv.subject === 'english' && eRv.items.length === 2 && eRv.stage === 'hinted', '영어 영작 첨삭: 실수 2개 짚음', r.body);
+  ok(eRv.items.every((i) => !('corrected' in i) && !('explain' in i)) && eRv.items[0].original === 'I go to school yesterday', '1단계: 틀린 위치·유형·힌트만, 고친 표현은 아직 안 보냄');
+  ok(!/went/i.test(eRv.items[0].hint) && /동사 모양/.test(eRv.items[0].hint), `AI가 힌트에 고친 단어(went)를 넣으면 유형 힌트로 바꿈: "${eRv.items[0].hint}"`, eRv.items[0]);
+  ok(eRv.canRetry && eRv.canReveal && eRv.praise.includes('favorite'), '고쳐 쓰기·잘 모르겠어요 버튼 + 칭찬 먼저');
+  r = await fm('POST', `/api/student/feedback/${eRv.id}/retry`, { text: 'I went to school yesterday' });
+  ok(r.status === 404, '다른 학생의 첨삭은 고쳐 쓰기 불가', r);
+  r = await fe('POST', `/api/student/feedback/${eRv.id}/retry`, { text: 'I went to school yesterday. I ate a apple.' });
+  const it1 = r.body.items?.find((i) => i.id === 1), it2 = r.body.items?.find((i) => i.id === 2);
+  ok(r.status === 200 && r.body.stage === 'revealed' && it1.fixed === true && !it1.corrected, '스스로 고친 시제는 ✔ 표시만', r.body);
+  ok(it2.fixed === false && it2.corrected === 'an apple' && /모음/.test(it2.explain), '못 고친 관사만 고친 표현·이유 공개', it2);
+  ok(r.body.canRetry === false && r.body.fixedCount === 1, `결과: 2개 중 ${r.body.fixedCount}개 스스로 고침`);
+  r = await fe('POST', '/api/student/feedback', { text: 'I go to school yesterday. I ate a apple.' });
+  r = await fe('POST', `/api/student/feedback/${r.body.id}/reveal`);
+  ok(r.status === 200 && r.body.stage === 'revealed' && r.body.items.every((i) => i.corrected), '"잘 모르겠어요" → 바로 모두 공개', r.body);
+  r = await fe('POST', '/api/student/feedback', { text: 'I want to 죽고 싶다' });
+  const sf = (await admin.query("SELECT count(*)::int AS n FROM safety_flags WHERE student_id=$1", [enSt])).rows[0].n;
+  ok(r.status === 200 && r.body.safety === true && /1388/.test(r.body.reply) && sf === 1, '글에 위험 신호 → 상담 안내 + 원장님께 알림', r.body);
+
+  // 한도
+  await admin.query("UPDATE monthly_usage SET feedback_reviews=30 WHERE academy_id=$1", [A]);
+  r = await fe('POST', '/api/student/feedback', { text: 'I go to school yesterday.' });
+  ok(r.status === 402 && r.body.code === 'FEEDBACK_QUOTA' && r.body.upgradeTo === 'standard', '라이트 월 30회 다 쓰면 스탠다드 안내', r.body);
+  r = await fe('POST', '/api/student/ask', { text: 'yesterday 뒤에는 왜 과거형이야?' });
+  ok(r.status === 200, '첨삭을 다 써도 글 질문은 계속 가능', r);
+  r = await dir('GET', '/api/director/plan');
+  ok(r.body.feedback?.exhausted === true && r.body.plan.features.some((f) => f.code === 'feedback_limited'), '원장 화면: 이번 달 첨삭 소진 표시 + 요금제 카드에 첨삭 표시', r.body.feedback);
+  ok(r.body.plans.find((p) => p.code === 'standard').features.some((f) => f.code === 'feedback_unlimited' && f.ready), '스탠다드 카드: 첨삭 무제한');
+  await admin.query("UPDATE academies SET plan_code='standard' WHERE id=$1", [A]);
+  r = await fe('POST', '/api/student/feedback', { text: 'I go to school yesterday.' });
+  ok(r.status === 200 && r.body.quota.limit === null, '스탠다드: 첨삭 무제한', r.body);
+
+  // 원장 화면 · 주간 기록
+  r = await dir('GET', `/api/director/feedback?studentId=${enSt}`);
+  const full = r.body.reviews?.find((x) => x.id === eRv.id);
+  ok(r.status === 200 && full?.items[1].corrected === 'an apple' && full.transcript.includes('pizza'), '원장님은 학생 글과 고친 표현 전부 확인', r.body);
+  ok(r.body.week?.top[0]?.type && r.body.week.count >= 3, `이번 주 실수 유형 요약: ${JSON.stringify(r.body.week?.top)}`, r.body.week);
+  r = await other('GET', `/api/director/feedback?studentId=${enSt}`);
+  ok(r.status === 200 && r.body.reviews.length === 0, '다른 학원 원장은 이 학생 첨삭을 못 봄', r.body);
+  r = await dir('GET', '/api/director/counsel');
+  const mj2 = r.body.rows.find((x) => x.nickname === '민준');
+  ok(mj2.ai_stats.questions === mjStatsBefore && mj2.ai_stats.feedback?.math >= 3, `첨삭은 질문 통계(해결률)에 섞이지 않고 따로 집계 (질문 ${mj2.ai_stats.questions}, 수학 첨삭 ${mj2.ai_stats.feedback?.math})`, mj2.ai_stats);
+  ok(mj2.ai_stats.feedback.mathPattern === '실수형', '수학: 실수형/개념형 판단 (부호 실수 → 실수형)', mj2.ai_stats.feedback);
+  const jw = r.body.rows.find((x) => x.nickname === '지우');
+  await dir('PUT', `/api/director/counsel/${enSt}`, { subject: '영어', progress: '영작 연습', attitude: '성실' });
+  prompts.length = 0;
+  r = await dir('POST', `/api/director/counsel/${enSt}/generate`);
+  const cp2 = prompts.find((x) => x.includes('주간 상담 카카오톡 메시지')) || '';
+  ok(r.status === 200 && /첨삭 \d+회/.test(cp2) && /자주 나온 실수: (시제|관사)/.test(cp2) && /스스로 고친 것 \d+개/.test(cp2), '상담글 초안 프롬프트에 첨삭 기록(실수 유형·스스로 고친 수) 자동 포함', cp2.match(/첨삭[^\n]*\n?[^\n]*/)?.[0]);
+  ok(jw && jw.ai_stats.feedback?.english >= 3, '지우: 영작 첨삭 기록이 상담 표에 연결', jw?.ai_stats);
+
+  origLog('\n── 16. 지도 방식: 핵심 힌트형 (위너스학원 방식) ──');
+  r = await dir('GET', '/api/director/persona');
+  ok(r.body.teaching_mode === 'hint_ladder', '기본은 힌트 4단계 방식', r.body);
+  const pr = r.body;
+  r = await dir('PUT', '/api/director/persona', { ...pr, teaching_mode: 'key_hint' });
+  ok(r.status === 200 && (await dir('GET', '/api/director/persona')).body.teaching_mode === 'key_hint', '원장님이 핵심 힌트형으로 변경');
+  const he = client();
+  await he('POST', '/api/student/login', { token: 'qrA', code: '07', pin: '1111' });
+  r = await he('GET', '/api/student/me');
+  ok(r.body.teachingMode === 'key_hint', '학생 화면에 지도 방식 전달 (단계 표시 숨김용)', r.body);
+  prompts.length = 0;
+  r = await he('POST', '/api/student/ask', { text: '2x+3=11 어떻게 풀어요?' });
+  const kp = prompts.at(-1) || '';
+  ok(r.status === 200 && r.body.teachingMode === 'key_hint', '핵심 힌트형으로 답변', r.body);
+  ok(kp.includes('1:1 학습 튜터') && kp.includes('풀이 전체 과정을 한 번에') && kp.includes('여기까지 이해됐니?') && kp.includes('오답 노트'), '프롬프트: 수학 풀이 전체 → 이해 확인 → 오답노트');
+  ok(kp.includes('[ ]') && kp.includes('( )') && kp.includes('핵심 힌트는 딱 1개'), '프롬프트: 영어는 뼈대(S/V)·[핵심]·(수식어)로 핵심 힌트 1개');
+  ok(kp.includes('먼저 꺼내지 않는다') && kp.includes('속이지 않는다'), '기술 용어는 먼저 안 꺼내되, 진지하게 물으면 솔직하게');
+  ok(r.body.reply.includes('x = 4') && r.body.reply.includes('여기까지 이해됐니'), '수학은 풀이 전체가 그대로 학생에게 전달 (정답 가리기 검사 안 함)', r.body.reply);
+  ok(!r.body.reply.includes('SUMMARY') && !r.body.reply.includes('weakness'), '요약 데이터는 학생 화면에 안 보임');
+  const sm = (await admin.query('SELECT summary FROM question_sessions WHERE id=$1', [r.body.sessionId])).rows[0].summary;
+  ok(sm?.weakness_point === '이항할 때 부호' && sm.math_wrong_note_assigned === true && sm.parent_cheering_msg, '요약(막힌 부분·오답노트·칭찬 한 줄)은 DB에 저장', sm);
+  const savedAi = (await admin.query("SELECT content FROM messages WHERE session_id=$1 AND role='ai'", [r.body.sessionId])).rows[0].content;
+  ok(!savedAi.includes('SUMMARY'), '대화 기록에도 요약 블록은 안 남음 (다음 질문 문맥 오염 방지)');
+  r = await dir('GET', '/api/director/monitor/sessions');
+  ok(r.body.some((x) => x.summary?.director_note === '이항 부호 연습 3문제 더'), '원장님 모니터링 목록에 코칭 메모 표시');
+  const hid = (await admin.query("SELECT id FROM students WHERE nickname='하은'")).rows[0].id;
+  await dir('PUT', `/api/director/counsel/${hid}`, { subject: '수학', progress: '일차방정식 복습', attitude: '성실' });
+  prompts.length = 0;
+  r = await dir('POST', `/api/director/counsel/${hid}/generate`);
+  const cp3 = prompts.find((x) => x.includes('주간 상담 카카오톡 메시지')) || '';
+  ok(r.status === 200 && cp3.includes('막혔던 부분: 이항할 때 부호') && cp3.includes('칭찬 포인트: 막힌 줄을') && cp3.includes('오답노트 작성 지시 1회'), '금요일 상담글 초안에 튜터 요약 자동 반영', r.body.error || cp3.match(/튜터[^\n]*/)?.[0]);
+  await dir('PUT', '/api/director/persona', { ...pr, teaching_mode: 'hint_ladder' });
+  prompts.length = 0;
+  await he('POST', '/api/student/ask', { text: '3x=12 모르겠어요' });
+  ok((prompts.at(-1) || '').includes('허용된 힌트는') || (prompts.at(-1) || '').includes('힌트 단계'), '힌트 4단계 방식으로 되돌리면 기존 규칙 적용');
 
   origLog('\n── DRY_RUN 미리보기 (민준 학부모님께 갈 카톡) ──\n' + counselLog);
   origLog(`\n결과: 통과 ${pass} / 실패 ${fail}`);

@@ -138,6 +138,51 @@ $('#signup-form').dispatchEvent(new w.Event('submit', { bubbles: true, cancelabl
 ok(!$('#su-done').hidden && $('#su-steps').textContent.includes('30분 Zoom 세팅') && $('#su-done-sub').textContent.includes('69,000원'), '가입 완료 → 온보딩 단계(Zoom 세팅 포함)');
 const zoomCount = (d.body.textContent.match(/30분 무료 화상 통화\(Zoom\)/g)||[]).length;
 ok(zoomCount >= 4, `Zoom 무료 세팅 안내 문구 ${zoomCount}곳 (대시보드·랜딩·가입·하단)`);
-ok(errors.length === 0, '조작 중 스크립트 오류 없음', errors.join(' | '));
-console.log(`\n결과: 통과 ${pass} / 실패 ${fail}`);
-setTimeout(() => process.exit(fail ? 1 : 0), 600);
+// ---- 영작·풀이 첨삭 ----
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+(async () => {
+  w.eval("setPlan('lite'); refreshAll();");   // 앞 시험에서 스탠다드로 바꿔 둔 것 되돌리기
+  click(d.querySelector('[data-view="student"]'));
+  await wait(1000);
+  ok(!$('#fb-chip').hidden && $('#fb-n').textContent.trim() === '9회', '학생 화면 ✍️ 첨삭 버튼 + 라이트 남은 횟수 9회');
+  click($('#fb-try-en')); await wait(1100);
+  let card = [...d.querySelectorAll('.pbub.fbc')].at(-1);
+  ok(card && card.querySelectorAll('li').length === 4 && card.querySelector('mark').textContent === 'I go to the beach', '예시 영작 → 틀린 곳 4곳 표시');
+  ok(!card.querySelector('.fx') && card.textContent.includes('💡') && !/went|an ice/.test([...card.querySelectorAll('.ht')].map((x) => x.textContent).join(' ')), '1단계는 힌트만, 고친 표현(went·an) 안 보임');
+  ok(!$('#fb-bar').hidden && $('#more-hint').hidden && $('#fb-n').textContent.trim() === '8회', '첨삭 모드 띠 표시, 힌트 버튼 숨김, 횟수 8회');
+  click($('#fb-try-fix')); await wait(1100);
+  card = [...d.querySelectorAll('.pbub.fbc')].at(-1);
+  const fixed = card.querySelectorAll('li.fixed').length, shown = [...card.querySelectorAll('.fx')].map((x) => x.textContent).join('|');
+  ok(fixed === 3 && shown.includes('a very fun day') && !shown.includes('went'), `고쳐 쓴 글 → 스스로 고친 ${fixed}곳 ✔, 못 고친 1곳만 공개 (${shown})`);
+  ok([...d.querySelectorAll('.pbub.fbc')][0].querySelector('.acts button').disabled, '이전 카드 버튼 잠김');
+  click($('#fb-try-en')); await wait(1100);
+  card = [...d.querySelectorAll('.pbub.fbc')].at(-1);
+  click(card.querySelectorAll('.acts button')[1]); await wait(1100);
+  card = [...d.querySelectorAll('.pbub.fbc')].at(-1);
+  ok(card.querySelectorAll('.fx').length === 4 && card.textContent.includes('went'), '"모르겠어요" → 고친 표현 모두 공개');
+  click($('#fb-try-ma')); await wait(1100);
+  card = [...d.querySelectorAll('.pbub.fbc')].at(-1);
+  ok(card.textContent.includes('부호 실수') && !/x\s*=\s*7|3x\s*=\s*21/.test(card.textContent) && card.querySelectorAll('.acts button').length === 1, '수학 풀이 → 틀린 줄·힌트만, 정답 없음, "모르겠어요" 버튼 없음');
+  click(card.querySelector('.acts button')); type($('#student-input'), '3x = 16 + 5\n3x = 21');
+  $('#composer').dispatchEvent(new w.Event('submit', { bubbles: true, cancelable: true })); await wait(1100);
+  card = [...d.querySelectorAll('.pbub.fbc')].at(-1);
+  ok(card.querySelector('li.fixed') && card.textContent.includes('마지막 줄도 네가'), '다시 푼 풀이 → ✔ 고쳤어, 마지막 답은 학생이 직접');
+  click($('#fb-end'));
+  ok($('#fb-bar').hidden && !$('#more-hint').hidden, '끝내기 → 일반 질문창');
+  // 원장 화면
+  click(d.querySelector('[data-view="director"]')); click(d.querySelector('[data-pane="monitor"]'));
+  ok(d.querySelectorAll('#fb-types .bar-row').length === 5 && $('#fb-types').textContent.includes('실수형'), '모니터링: 이번 주 첨삭 실수 유형 막대 (실수형/개념형)');
+  click(d.querySelector('#fb-list [data-fbr="0"]'));
+  ok(!$('#modal').hidden && $('#modal-body').textContent.includes('an ice cream') && $('#modal-body').textContent.includes('스스로 고침'), '최근 첨삭 → 학생 글과 고친 표현 전체');
+  click($('#modal-close'));
+  click(d.querySelector('[data-pane="billing"]'));
+  ok(!$('#fbq-wrap').hidden && $('#fbq-count').textContent === '24 / 30회', `요금 화면: 이번 달 첨삭 ${$('#fbq-count').textContent}`);
+  ok($('#dash-plans').textContent.includes('첨삭 월 30회') && $('#dash-plans').textContent.includes('첨삭 무제한'), '요금제 카드에 첨삭(라이트 30회 / 스탠다드 무제한)');
+  click(d.querySelector('[data-pane="report"]'));
+  ok(d.querySelector('[data-chip="k3"]').textContent.includes('첨삭 3회'), '상담 표 AI 기록에 첨삭 횟수');
+  click(d.querySelector('[data-pick="k3"]')); click($('#ed-regen'));
+  ok(/영어 영작 첨삭을 3번/.test($('#ed-text').value) && /시제 실수가 첫 글 4개에서 마지막 글 1개/.test($('#ed-text').value), '도윤 상담글 초안에 첨삭 기록(스스로 고친 수·실수 감소) 반영');
+  ok(errors.length === 0, '조작 중 스크립트 오류 없음', errors.join(' | '));
+  console.log(`\n결과: 통과 ${pass} / 실패 ${fail}`);
+  setTimeout(() => process.exit(fail ? 1 : 0), 300);
+})();

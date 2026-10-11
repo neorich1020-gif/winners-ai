@@ -1,0 +1,75 @@
+-- =========================================================
+-- 기능 추가용 변경 (여러 번 실행해도 안전 — 서버 시작 때 db/setup.js가 매번 실행)
+-- 이미 운영 중인 DB에도 새 기능이 자동으로 들어가게 하려고 schema.sql과 따로 둔다.
+-- =========================================================
+
+-- ---------- 2026-10 영어 영작 첨삭 · 수학 풀이 첨삭 ----------
+-- 라이트: 학원 전체 월 30회 맛보기, 스탠다드·프리미엄: 무제한(NULL)
+ALTER TABLE plans ADD COLUMN IF NOT EXISTS feedback_monthly_limit INT;
+UPDATE plans SET feedback_monthly_limit = 30
+ WHERE code = 'lite' AND feedback_monthly_limit IS NULL AND NOT ('feedback_limited' = ANY(features));
+UPDATE plans SET features = array_append(features, 'feedback_limited')
+ WHERE code = 'lite' AND NOT ('feedback_limited' = ANY(features));
+UPDATE plans SET features = array_append(features, 'feedback_unlimited')
+ WHERE code IN ('standard','premium') AND NOT ('feedback_unlimited' = ANY(features));
+
+ALTER TABLE monthly_usage ADD COLUMN IF NOT EXISTS feedback_reviews INT NOT NULL DEFAULT 0;
+ALTER TABLE monthly_usage ADD COLUMN IF NOT EXISTS feedback_notified_at TIMESTAMPTZ;
+
+-- 첨삭 1건 = 학생이 올린 글/풀이 1개
+--   stage: hinted(위치·힌트만 보여 줌) → retried(고쳐 써 봄) → revealed(영어: 고친 표현 공개) / perfect(다 맞음)
+--   items: [{id, original|line, type, hint, corrected?, explain?, fixed?}]  ← corrected/explain은 공개 전 학생에게 안 보냄
+-- 질문 세션에 묶여 있어서 학원 보관기간이 지나면 세션과 함께 자동 삭제된다.
+CREATE TABLE IF NOT EXISTS feedback_reviews (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  academy_id   UUID NOT NULL REFERENCES academies(id) ON DELETE CASCADE,
+  student_id   UUID NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+  session_id   UUID NOT NULL REFERENCES question_sessions(id) ON DELETE CASCADE,
+  subject      TEXT NOT NULL CHECK (subject IN ('english','math')),
+  stage        TEXT NOT NULL DEFAULT 'hinted' CHECK (stage IN ('hinted','retried','revealed','perfect')),
+  transcript   TEXT NOT NULL DEFAULT '',          -- AI가 읽은 학생 글(개인정보 가림 후)
+  items        JSONB NOT NULL DEFAULT '[]',
+  error_count  INT NOT NULL DEFAULT 0,            -- 처음 짚은 실수 수
+  fixed_count  INT NOT NULL DEFAULT 0,            -- 고쳐 쓰기로 스스로 고친 수
+  retries      SMALLINT NOT NULL DEFAULT 0,
+  praise       TEXT NOT NULL DEFAULT '',
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS feedback_reviews_student_idx ON feedback_reviews (academy_id, student_id, created_at);
+ALTER TABLE feedback_reviews ENABLE ROW LEVEL SECURITY;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='feedback_reviews' AND policyname='tenant_isolation') THEN
+    CREATE POLICY tenant_isolation ON feedback_reviews
+      USING (academy_id = NULLIF(current_setting('app.academy_id', true), '')::uuid);
+  END IF;
+END $$;
+-- 계정 2개 방식(db/roles.sql)을 쓰는 경우 새 표 권한
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='app_user') THEN
+    GRANT SELECT, INSERT, UPDATE, DELETE ON feedback_reviews TO app_user;
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='batch_user') THEN
+    GRANT SELECT, INSERT, UPDATE, DELETE ON feedback_reviews TO batch_user;
+  END IF;
+END $$;
+
+-- 첨삭도 질문 세션으로 저장(원장 모니터링·보관기간 공통)하되, 질문 통계(해결률·힌트 단계)에서는 뺀다
+ALTER TABLE question_sessions ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'question';
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='question_sessions_kind_check') THEN
+    ALTER TABLE question_sessions ADD CONSTRAINT question_sessions_kind_check CHECK (kind IN ('question','feedback'));
+  END IF;
+END $$;
+
+-- ---------- 2026-10 지도 방식 선택 · 대화 요약 ----------
+-- teaching_mode: NULL 또는 'hint_ladder' = 힌트 4단계(정답 안 줌, 기본)
+--                'key_hint' = 핵심 힌트형 (수학: 풀이 전체 → 이해 확인 → 오답노트 / 영어·기타: 핵심 힌트 1개)
+ALTER TABLE academies ADD COLUMN IF NOT EXISTS teaching_mode TEXT;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='academies_teaching_mode_check') THEN
+    ALTER TABLE academies ADD CONSTRAINT academies_teaching_mode_check CHECK (teaching_mode IS NULL OR teaching_mode IN ('hint_ladder','key_hint'));
+  END IF;
+END $$;
+-- 질문 1건(세션)의 요약: 공부한 주제, 막힌 부분, 오답노트 지시 여부, 원장님 코칭 메모, 학부모 칭찬 한 줄 (학생에게는 안 보임)
+ALTER TABLE question_sessions ADD COLUMN IF NOT EXISTS summary JSONB;
