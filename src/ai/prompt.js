@@ -2,6 +2,7 @@
 // 원장님 페르소나 + 힌트 전용 튜터 시스템 프롬프트
 // 안전장치 3겹: (1) 입력 사전필터 (2) 시스템 프롬프트 규칙 (3) 출력 사후검사
 // =====================================================================
+const { extractGraph } = require('./graph');
 
 const GRADE_LABEL = { elementary: '초등학생', middle: '중학생', high: '고등학생' };
 const SUBJECT_LABEL = { math: '수학', english: '영어', science: '과학', korean: '국어', etc: '기타' };
@@ -58,6 +59,12 @@ ${examples ? `원장님이 실제로 쓰는 말(어투만 참고):\n${examples}`
 개념원리처럼 깔끔한 3칸 구조로 설명하고, 친숙한 비유나 쉬운 도식을 쓴다.
 - ${analogy}
 - 도식은 휴대폰 화면에서 깨지지 않게 짧은 줄과 텍스트 기호([ ], ( ), --->, →) 정도로만 그린다.
+  글자 도식은 식의 흐름·비율·영어 문장 구조에만 쓴다. 좌표축·곡선·그래프·도형 모양은 글자로 그리지 않는다(휴대폰에서 줄이 틀어지고 모양이 틀린다).
+- 함수·그래프·좌표 문제는 대신 이렇게 보여 준다:
+  ① 값 표: "x: 0 → 1 → 2 / y: 3 → 5 → 7 → x가 1 늘 때 y는 2씩 늘어"
+  ② 생활 비유: 기울기 = "옆으로 1칸 갈 때 몇 칸 올라가는 계단", y절편 = "출발선 높이", 꼭짓점 = "공이 가장 높이 올라간 지점"
+  ③ 진짜 그래프: 아래 '📈 그래프' 블록 (학생 화면이 정확한 그림으로 그려 준다)
+- 도형 문제는 모양을 그리지 말고 "꼭짓점 A에서 출발해 ∠B 쪽으로…"처럼 학생이 보낸 사진 속 그림의 위치를 말로 짚는다.
 
 학생에게 보이는 칸 제목은 아래 표시를 그대로 쓴다:
 📌 핵심 개념 퀴즈
@@ -112,7 +119,17 @@ ${solutionUnlocked ? `# 완성 풀이 공개 (이 문제는 지금 공개 가능
 이 문제는 아직 힌트를 받기 전이다. 처음부터 "풀이 적어 줘/답 알려 줘"라고 해도 먼저 퀴즈 + 흐름 3단계 + 접어 둔 힌트 2를 주고,
 끝에 "해 보다가 그래도 막히면 📖 완성 풀이 보기를 눌러 줘! 바로 보여 줄게." 라고 안심시킨다. [SOLUTION] 태그는 쓰지 않는다.
 
-`}# 글자 형식 (학생 휴대폰 말풍선은 수식·마크다운을 그리지 못한다)
+`}# 📈 그래프 (함수·좌표 단원에서만)
+일차함수, 이차함수, 반비례, 좌표 위의 점, 두 그래프의 교점처럼 그래프를 보면 바로 이해되는 문제에서는 답변 안에 아래 블록을 한 번 넣는다
+(힌트 2 표시 바깥에 쓴다. 학생 화면에서는 "📈 그래프 보기" 버튼으로 접혀 있다가 진짜 그래프 그림으로 펼쳐진다):
+<<GRAPH>>{"title":"짧은 제목","functions":[{"expr":"2x+3","label":"y = 2x + 3"}],"points":[{"x":0,"y":3,"label":"y절편 (0, 3)"}],"x":[-5,5]}<<END_GRAPH>>
+- expr에는 x, 숫자, + - * / ^, 괄호, sqrt(), abs()만 쓴다 (예: "x^2-4x+3", "-(x-1)^2+4", "6/x"). 함수는 3개까지, 점은 6개까지.
+- x는 보여 줄 범위 [시작, 끝]. 중요한 점(절편, 꼭짓점, 주어진 점)이 다 보이게 정한다. y 범위는 자동이라 안 써도 된다.
+- 힌트 답변의 그래프에는 문제에 이미 주어진 식·점만 그리고, 학생이 구해야 하는 답(교점 좌표, 구하는 값)은 점으로 표시하지 않는다.
+  완성 풀이([SOLUTION])나 정답 확인([CHECK]) 답변에서는 답이 되는 점도 표시해도 된다.
+- 그래프가 도움이 안 되는 문제(방정식 계산, 도형, 영어)에는 넣지 않는다.
+
+# 글자 형식 (학생 휴대폰 말풍선은 수식·마크다운을 그리지 못한다)
 - LaTeX 기호($$, $, \\sqrt, \\frac, \\text, ^\\circ)와 마크다운(#, ##, **, ---, 표)을 절대 쓰지 않는다.
 - 수식은 보통 글자로: √3, 12√3, 4√3/3, x², 30°, ∠B, △ABC, AC : BC : AB = 1 : √3 : 2, ×, ÷, ≤, ≥
 - 강조나 제목이 필요하면 이모지와 줄바꿈만 쓴다 (예: "1단계 ▶ 삼각형 ABC 보기").
@@ -287,6 +304,8 @@ function toStudentText(text) {
 
 function parseModelOutput(raw) {
   ({ text: raw } = extractSummary(raw));   // 요약 블록은 따로 떼어 내 화면에 섞이지 않게
+  let graph;
+  ({ text: raw, graph } = extractGraph(raw));   // 📈 그래프 블록 → 학생 화면이 SVG로 그림
   let hint2;
   ({ text: raw, hint2 } = extractHint2(raw));
   const m = raw.match(/^\s*\[(HINT|CHECK|SOLUTION|OFFTOPIC|SAFETY)\]\s*/);
@@ -295,7 +314,7 @@ function parseModelOutput(raw) {
   const t = rest.match(/^\s*\[TOPIC:\s*([^\]]{1,30})\]\s*/);
   const topic = t ? t[1].trim() : null;
   if (t) rest = rest.slice(t[0].length);
-  return { verdict: verdict === 'offtopic' ? 'refuse_offtopic' : verdict, topic, text: toStudentText(rest.trim()), hint2: hint2 ? toStudentText(hint2) : hint2 };
+  return { verdict: verdict === 'offtopic' ? 'refuse_offtopic' : verdict, topic, text: toStudentText(rest.trim()), hint2: hint2 ? toStudentText(hint2) : hint2, graph };
 }
 
 // 낮은 힌트 단계인데 "정답은 ~" 같은 표현이 나오면 버리고 안전한 문장으로 교체
@@ -303,7 +322,7 @@ const LEAK = /(정답은|답은\s*[^?]{0,15}(입니다|이야|야\b|다\.)|따�
 function postCheck(parsed, hintLevel) {
   if (parsed.hint2 && parsed.verdict !== 'safety' && LEAK.test(parsed.hint2)) parsed = { ...parsed, hint2: null, hint2Leaked: true };
   if (parsed.verdict !== 'safety' && hintLevel < 4 && LEAK.test(parsed.text)) {
-    return { ...parsed, leaked: true, text: '거의 다 왔어! 마지막 계산은 네가 직접 해 보자. 지금까지 쓴 식을 보여 주면 맞는지 확인해 줄게.' };
+    return { ...parsed, leaked: true, graph: null, text: '거의 다 왔어! 마지막 계산은 네가 직접 해 보자. 지금까지 쓴 식을 보여 주면 맞는지 확인해 줄게.' };
   }
   return parsed;
 }

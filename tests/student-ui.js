@@ -13,7 +13,7 @@ w.fetch = async (url, opt = {}) => {
   if (url.endsWith('/me')) return loggedIn ? R(200, { nickname: '민준', classToken: 'qrA', photo: { used: 99, limit: 100, remaining: 1 }, feedback: { used: 28, limit: 30, remaining: 2, subject: 'english' } }) : R(401, { error: '로그인이 필요합니다' });
   if (url.endsWith('/login')) { if (body.pin === '1111') { loggedIn = true; return R(200, { nickname: '민준' }); } return R(401, { error: '번호나 비밀번호를 확인해 주세요' }); }
   if (url.endsWith('/ask') && body.image) return R(402, { error: '이번 달 사진 질문 100회를 모두 썼어. 문제를 글로 적어서 물어봐 줘!', code: 'PHOTO_QUOTA', used: 100, limit: 100, remaining: 0, upgradeTo: 'standard' });
-  if (url.endsWith('/ask') && body.text.includes('HINT2TEST')) return R(200, { sessionId: 's9', hintLevel: 0, reply: '📌 핵심 개념 퀴즈\n🧭 힌트 1 · 해결 흐름 3단계', hint2: '[2x] + 3 ---> 11', teachingMode: 'key_hint', solutionAvailable: true });
+  if (url.endsWith('/ask') && body.text.includes('HINT2TEST')) return R(200, { sessionId: 's9', hintLevel: 0, reply: '📌 핵심 개념 퀴즈\n🧭 힌트 1 · 해결 흐름 3단계', hint2: '[2x] + 3 ---> 11', teachingMode: 'key_hint', solutionAvailable: true, graph: { title: '두 직선', x: [-4, 5], y: [-5, 15], series: [{ label: 'y = 2x + 3', segs: [[[-4, -5], [0, 3], [5, 13]]] }], points: [{ x: 0, y: 3, label: '(0, 3)' }] } });
   if (url.endsWith('/session/s9/hint2')) return R(200, { ok: true });
   if (url.endsWith('/ask') && body.text.includes('완성 풀이')) return R(200, { sessionId: 's9', hintLevel: 0, reply: '1단계 ▶ 2x = 8\n답: x = 4\n이제 이 풀이를 가리고 혼자 처음부터 다시 써 보자!', solutionShown: true, solutionAvailable: false, teachingMode: 'key_hint' });
   if (url.endsWith('/ask')) { await new Promise(r=>setTimeout(r,80)); return R(200, { sessionId: 's1', hintLevel: body.moreHint ? 1 : 0, reply: body.moreHint ? '이건 일차방정식이야. 등식의 성질 기억나?' : '어디까지 해 봤어?' }); }
@@ -75,6 +75,10 @@ let pass = 0, fail = 0; const ok = (c, m) => { c ? pass++ : fail++; console.log(
   ok(h2btn && h2body.hidden && !h2body.closest('.row').querySelector('.bubble').textContent.includes('--->'), '결정적 힌트는 접힌 채로 답변 아래에');
   h2btn.click(); await tick();
   ok(!h2body.hidden && h2body.textContent.includes('[2x] + 3 ---> 11') && calls.some((c) => c[0] === '/api/student/session/s9/hint2'), '"🔑 결정적 힌트 보기" → 펼쳐지고 서버에 기록');
+  const gbtn = [...w.document.querySelectorAll('.graph-btn')].at(-1), gbody = [...w.document.querySelectorAll('.graph-body')].at(-1);
+  ok(gbtn && gbody.hidden && gbody.querySelector('svg polyline.g-line') && gbody.querySelector('circle.g-pt') && gbody.textContent.includes('(0, 3)'), '📈 그래프: 접힌 채로 진짜 그래프(SVG 선·점·이름) 준비');
+  gbtn.click(); await tick();
+  ok(!gbody.hidden && gbtn.textContent.includes('접기') && gbody.querySelector('.graph-legend').textContent.includes('y = 2x + 3'), '"📈 그래프 보기" → 펼쳐짐 + 범례');
   // ---- 📖 완성 풀이 보기 ----
   ok(!$('#show-sol').hidden, '힌트를 받은 뒤 "📖 완성 풀이 보기" 버튼이 나타남');
   $('#show-sol').click(); await new Promise(r=>setTimeout(r,80));

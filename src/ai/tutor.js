@@ -128,7 +128,9 @@ async function answer(client, { academy, cls, student, sessionId, text, wantMore
   const saved = (await client.query(
     'INSERT INTO messages (academy_id, session_id, role, content, verdict) VALUES ($1,$2,$3,$4,$5) RETURNING id',
     // 접어 둔 힌트 2도 대화 기록에는 함께 남긴다 (다음 답변에서 튜터가 이미 준 힌트를 알 수 있게, 원장님 모니터링용)
-    [academy.id, session.id, 'ai', out.hint2 ? `${out.text}\n\n[🔑 결정적 힌트 · 접어 둠]\n${out.hint2}` : out.text,
+    [academy.id, session.id, 'ai', out.text
+       + (out.hint2 ? `\n\n[🔑 결정적 힌트 · 접어 둠]\n${out.hint2}` : '')
+       + (out.graph ? `\n\n[📈 그래프 보여 줌: ${[...out.graph.series.map((g) => g.label), ...out.graph.points.map((pt) => pt.label || `(${pt.x}, ${pt.y})`)].join(', ')}]` : ''),
      out.leaked ? 'hint_leak_blocked' : out.verdict])).rows[0];
 
   if (out.topic) await client.query('UPDATE question_sessions SET topic=COALESCE(topic,$1) WHERE id=$2', [out.topic, session.id]);
@@ -140,7 +142,7 @@ async function answer(client, { academy, cls, student, sessionId, text, wantMore
     await client.query('INSERT INTO safety_flags (academy_id, student_id, message_id, category) VALUES ($1,$2,$3,$4)',
       [academy.id, student.id, saved.id, 'wellbeing']);
   }
-  return { sessionId: session.id, hintLevel: session.hint_level, reply: out.text, hint2: out.hint2 || null, safety: out.verdict === 'safety',
+  return { sessionId: session.id, hintLevel: session.hint_level, reply: out.text, hint2: out.hint2 || null, graph: out.graph || null, safety: out.verdict === 'safety',
     solutionShown: out.verdict === 'solution', solutionAvailable: keyHint && out.verdict !== 'solution' && (hintsSoFar >= 1 || out.verdict === 'hint'), withImage: !!img, photo,
     teachingMode: keyHint ? 'key_hint' : 'hint_ladder' };
 }

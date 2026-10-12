@@ -1,7 +1,7 @@
 // 실행 전 준비: PostgreSQL(127.0.0.1:54329, postgres/pw)에 db/schema.sql, db/functions.sql, db/roles.sql 적용 후
 //   node tests/integration.js            (계정 2개 방식)
 //   TEST_DB_URL=<단일 계정 주소> node tests/integration.js   (Render처럼 계정 1개 + node db/setup.js 후)
-// AI는 가짜 응답, 알림톡은 DRY_RUN — 실제 발송·과금 없음 · 통합 테스트 198개
+// AI는 가짜 응답, 알림톡은 DRY_RUN — 실제 발송·과금 없음 · 통합 테스트 203개
 // 주간 상담글 기능 통합 테스트: 실제 PostgreSQL + 실제 서버 + DRY_RUN 발송 (AI만 가짜 응답)
 const crypto = require('crypto');
 Object.assign(process.env, {
@@ -32,6 +32,9 @@ Module._load = function (req, ...rest) {
       }
       if (args.system.includes('1:1 학습 튜터')) {
         const last = JSON.stringify(args.messages.at(-1));
+        if (last.includes('그래프 교점')) {
+          return { content: [{ type: 'text', text: '[HINT]\n[TOPIC: 일차함수]\n값 표\nx: 0 → 1 → 2\ny: 3 → 5 → 7\n<<GRAPH>>{"title":"두 직선","functions":[{"expr":"2x+3","label":"y = 2x + 3"},{"expr":"-x+6"},{"expr":"require(\'fs\')"}],"points":[{"x":0,"y":3,"label":"(0, 3)"}],"x":[-4,5]}<<END_GRAPH>>' }] };
+        }
         if (last.includes('완성 풀이')) {
           return { content: [{ type: 'text', text: '[SOLUTION]\n[TOPIC: 일차방정식]\n1단계 ▶ 2x + 3 = 11 에서 양변에서 3을 빼면 2x = 8\n💡 개념: 등식의 성질\n2단계 ▶ 양변을 2로 나누면 x = 4\n답: x = 4\n이제 이 풀이를 가리고 혼자 처음부터 다시 써 보자! 다 쓰면 오답노트 사진으로 인증해 줘 📸\n<<SUMMARY>>{"subject":"수학","topic":"일차방정식","weakness_point":"이항할 때 부호","math_wrong_note_assigned":false,"director_note":"풀이 보고 다시 쓰기 확인","parent_cheering_msg":"막힌 줄을 정확히 짚어 질문했어요"}<<END>>' }] };
         }
@@ -473,6 +476,15 @@ function client() {
   r = await he('POST', '/api/student/ask', { text: '2x = 8 이니까 x = 4요', sessionId: sidKH });
   ok(r.body.reply.includes('x = 4') && r.body.reply.includes('오답노트에 적어서 인증해줘'), '학생이 풀어 내면 정답 확인 + 오답노트 인증 지시 (확인 답변은 정답 가리기 안 함)', r.body.reply);
   const sm2 = (await admin.query('SELECT summary FROM question_sessions WHERE id=$1', [sidKH])).rows[0].summary;
+  // 📈 그래프: 튜터가 보낸 식을 서버가 안전하게 계산해서 좌표로 → 학생 화면이 SVG로 그림
+  r = await he('POST', '/api/student/ask', { text: '두 그래프 교점 모르겠어요' });
+  ok(r.status === 200 && r.body.graph && r.body.graph.series.length === 2 && r.body.graph.series[0].label === 'y = 2x + 3' && r.body.graph.series[1].label === 'y = -x+6', '그래프 블록 → 좌표 데이터 (위험한 식은 버림)', r.body.graph && r.body.graph.series.map((x) => x.label));
+  const g0 = r.body.graph.series[0].segs[0];
+  ok(g0.length > 100 && g0.some(([x, y]) => x === 0 && y === 3) && r.body.graph.x[0] === -4 && r.body.graph.points[0].label === '(0, 3)', '좌표 계산 정확 (x=0 → y=3), 범위·점 유지');
+  ok(!r.body.reply.includes('<<GRAPH') && !r.body.reply.includes('expr'), '학생 말풍선에는 그래프 코드가 안 보임');
+  const gm = (await admin.query("SELECT content FROM messages WHERE session_id=$1 AND role='ai' ORDER BY id DESC LIMIT 1", [r.body.sessionId])).rows[0].content;
+  ok(gm.includes('📈 그래프 보여 줌: y = 2x + 3'), '대화 기록(원장님 화면)에 그래프 보여 준 것 표시');
+  ok((prompts.at(-1) || '').includes('<<GRAPH>>') && (prompts.at(-1) || '').includes('좌표축·곡선·그래프·도형 모양은 글자로 그리지 않는다'), '프롬프트: 글자 그래프 금지 + 진짜 그래프 블록 안내');
   // 📖 완성 풀이: 힌트를 받기 전에는 가리고, 힌트를 받은 뒤 막히면 바로 보여 줌
   prompts.length = 0;
   r = await he('POST', '/api/student/ask', { text: '그냥 완성 풀이 보여 주세요' });

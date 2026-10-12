@@ -77,6 +77,71 @@
     box.append(btn, body);
     row.querySelector('.stack').insertBefore(box, row.querySelector('.time'));
   }
+  // 📈 그래프: 서버가 계산한 좌표를 진짜 그래프(SVG)로 그린다. "📈 그래프 보기"로 접혀 있다가 펼쳐짐
+  const SVGNS = 'http://www.w3.org/2000/svg';
+  function svgEl(tag, attrs, text) { const e = document.createElementNS(SVGNS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (text != null) e.textContent = text; return e; }
+  function niceStep(range) { const raw = range / 8, p = Math.pow(10, Math.floor(Math.log10(raw))); const m = raw / p; return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 5 ? 5 : 10) * p; }
+  function drawGraph(g) {
+    const W = 320, H = 280, L = 12, R = 12, T = 12, B = 12;
+    const [x0, x1] = g.x, [y0, y1] = g.y;
+    const sx = (x) => L + ((x - x0) / (x1 - x0)) * (W - L - R), sy = (y) => H - B - ((y - y0) / (y1 - y0)) * (H - T - B);
+    const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}`, class: 'graph-svg', role: 'img', 'aria-label': g.title || '그래프' });
+    const cid = 'gc' + Math.random().toString(36).slice(2, 8);
+    const cp = svgEl('clipPath', { id: cid }); cp.appendChild(svgEl('rect', { x: L, y: T, width: W - L - R, height: H - T - B })); svg.appendChild(cp);
+    const grid = svgEl('g', { class: 'g-grid' }), labels = svgEl('g', { class: 'g-tick' });
+    const xs = niceStep(x1 - x0), ys = niceStep(y1 - y0);
+    const ax = Math.min(Math.max(0, x0), x1), ay = Math.min(Math.max(0, y0), y1);   // 축 위치 (0이 범위 밖이면 가장자리)
+    for (let v = Math.ceil(x0 / xs) * xs; v <= x1 + 1e-9; v += xs) {
+      grid.appendChild(svgEl('line', { x1: sx(v), y1: T, x2: sx(v), y2: H - B }));
+      if (Math.abs(v) > 1e-9) labels.appendChild(svgEl('text', { x: sx(v), y: Math.min(H - B - 2, sy(ay) + 13), 'text-anchor': 'middle' }, +v.toFixed(2)));
+    }
+    for (let v = Math.ceil(y0 / ys) * ys; v <= y1 + 1e-9; v += ys) {
+      grid.appendChild(svgEl('line', { x1: L, y1: sy(v), x2: W - R, y2: sy(v) }));
+      if (Math.abs(v) > 1e-9) labels.appendChild(svgEl('text', { x: Math.max(L + 2, sx(ax) - 4), y: sy(v) + 4, 'text-anchor': sx(ax) - 4 < L + 14 ? 'start' : 'end' }, +v.toFixed(2)));
+    }
+    svg.appendChild(grid);
+    const axes = svgEl('g', { class: 'g-axis' });
+    axes.appendChild(svgEl('line', { x1: L, y1: sy(ay), x2: W - R, y2: sy(ay) }));
+    axes.appendChild(svgEl('line', { x1: sx(ax), y1: T, x2: sx(ax), y2: H - B }));
+    axes.appendChild(svgEl('text', { x: W - R - 2, y: sy(ay) - 5, 'text-anchor': 'end', class: 'g-axname' }, 'x'));
+    axes.appendChild(svgEl('text', { x: sx(ax) + 6, y: T + 10, class: 'g-axname' }, 'y'));
+    if (x0 <= 0 && x1 >= 0 && y0 <= 0 && y1 >= 0) axes.appendChild(svgEl('text', { x: sx(0) - 4, y: sy(0) + 13, 'text-anchor': 'end', class: 'g-tick' }, 'O'));
+    svg.appendChild(axes); svg.appendChild(labels);
+    const plot = svgEl('g', { 'clip-path': `url(#${cid})` });
+    g.series.forEach((s, i) => s.segs.forEach((seg) => {
+      plot.appendChild(svgEl('polyline', { class: `g-line c${i % 3}`, points: seg.map(([x, y]) => `${sx(x).toFixed(1)},${sy(Math.max(y0 - (y1 - y0), Math.min(y1 + (y1 - y0), y))).toFixed(1)}`).join(' ') }));
+    }));
+    svg.appendChild(plot);
+    g.points.forEach((pt) => {
+      if (pt.x < x0 || pt.x > x1 || pt.y < y0 || pt.y > y1) return;
+      svg.appendChild(svgEl('circle', { cx: sx(pt.x), cy: sy(pt.y), r: 4.5, class: 'g-pt' }));
+      if (pt.label) {
+        const right = sx(pt.x) < W * 0.62;
+        svg.appendChild(svgEl('text', { x: sx(pt.x) + (right ? 8 : -8), y: sy(pt.y) - 8, 'text-anchor': right ? 'start' : 'end', class: 'g-ptlabel' }, pt.label));
+      }
+    });
+    return svg;
+  }
+  function addGraph(row, g) {
+    const box = document.createElement('div'); box.className = 'graph';
+    const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'graph-btn';
+    btn.textContent = '📈 그래프 보기'; btn.setAttribute('aria-expanded', 'false');
+    const body = document.createElement('div'); body.className = 'graph-body'; body.hidden = true;
+    if (g.title) body.appendChild(Object.assign(document.createElement('div'), { className: 'graph-title', textContent: g.title }));
+    try { body.appendChild(drawGraph(g)); } catch { return; }
+    if (g.series.length) {
+      const legend = document.createElement('div'); legend.className = 'graph-legend';
+      g.series.forEach((s, i) => { const it = document.createElement('span'); it.className = `c${i % 3}`; it.textContent = s.label; legend.appendChild(it); });
+      body.appendChild(legend);
+    }
+    btn.onclick = () => {
+      const open = body.hidden; body.hidden = !open; btn.setAttribute('aria-expanded', String(open));
+      btn.textContent = open ? '📈 그래프 접기' : '📈 그래프 보기';
+      if (open) scrollDown();
+    };
+    box.append(btn, body);
+    row.querySelector('.stack').insertBefore(box, row.querySelector('.time'));
+  }
   function typing(label) {
     const row = document.createElement('div'); row.className = 'row ai typing'; row.setAttribute('role', 'status');
     row.appendChild($('#avatar-tpl').content.cloneNode(true));
@@ -340,6 +405,7 @@
       if (r.photo) renderQuota(r.photo);
       t.remove();
       const row = add('ai', r.reply);
+      if (r.graph) addGraph(row, r.graph);
       if (r.hint2) addHint2(row, r.hint2, r.sessionId);
       setSol(r.solutionAvailable);
     } catch (e) {
