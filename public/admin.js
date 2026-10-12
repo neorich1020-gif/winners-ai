@@ -94,7 +94,7 @@
         const st = STATUS[r.status] || ['', r.status];
         const kind = r.kind === 'feedback' ? '<span class="pill">첨삭</span> ' : '';
         return `<tr class="click" data-i="${i}" tabindex="0"><td class="note">${time(r.started_at)}</td><td><b>${esc(r.nickname)}</b></td><td>${esc(r.class_name || '')}</td>
-          <td>${kind}${esc(r.topic || '-')}</td><td><span class="pill ${st[0]}">${esc(st[1])}</span></td><td>${r.hint2_opened ? '🔑 펼침' : '<span class="note">-</span>'}</td>
+          <td>${kind}${esc(r.topic || '-')}</td><td><span class="pill ${st[0]}">${esc(st[1])}</span></td><td>${[r.hint2_opened ? '🔑 펼침' : '', r.solution_shown ? '📖 풀이 봄' : ''].filter(Boolean).join(' ') || '<span class="note">-</span>'}</td>
           <td class="note">${esc(r.summary?.weakness_point || '')}</td></tr>`;
       }).join('') : '<tr><td colspan="7"><div class="empty">아직 질문 기록이 없어요</div></td></tr>');
     $$('#ss-table tr[data-i]').forEach((tr) => { tr.onclick = () => openSession(rows[tr.dataset.i]); tr.onkeydown = (e) => { if (e.key === 'Enter') openSession(rows[tr.dataset.i]); }; });
@@ -107,7 +107,7 @@
       (sm ? `<div class="sumcard"><div><b>과목·주제</b>${esc([sm.subject, sm.topic].filter(Boolean).join(' · '))}</div>
         <div><b>헷갈린 부분</b>${esc(sm.weakness_point || '없음')}</div><div><b>코칭 메모</b>${esc(sm.director_note || '-')}</div>
         <div><b>칭찬 한 줄</b>${esc(sm.parent_cheering_msg || '-')}</div>
-        <div><b>결정적 힌트</b>${s.hint2_opened ? '펼쳐 봄' : '안 펼침'} · <b style="min-width:0">오답노트</b> ${sm.math_wrong_note_assigned ? '지시함' : '-'}</div></div>` : '') +
+        <div><b>결정적 힌트</b>${s.hint2_opened ? '펼쳐 봄' : '안 펼침'}${s.solution_shown ? ' · 📖 완성 풀이 봄' : ''} · <b style="min-width:0">오답노트</b> ${sm.math_wrong_note_assigned ? '지시함' : '-'}</div></div>` : '') +
       msgs.map((m) => `<div class="bub ${m.role === 'student' ? 'student' : 'ai'} ${m.verdict === 'safety' ? 'flag' : ''}">${esc(m.content)}</div>`).join('') +
       '<p class="note">이 대화를 열람한 기록이 남았어요.</p>';
     panel.querySelector('[data-close]').onclick = closeDrawer;

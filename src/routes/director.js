@@ -328,7 +328,7 @@ r.get('/monitor/overview', auth, async (req, res) => {
 r.get('/monitor/sessions', auth, async (req, res) => {
   res.json(await T(req, async (c) => (await c.query(
     `SELECT q.id, q.student_id, s.nickname, cl.name AS class_name, q.subject, q.topic, q.hint_level, q.status, q.started_at,
-            q.kind, q.summary, q.hint2_opened,
+            q.kind, q.summary, q.hint2_opened, q.solution_shown,
             (SELECT count(*)::int FROM messages m WHERE m.session_id=q.id AND m.role='student') AS turns
        FROM question_sessions q JOIN students s ON s.id=q.student_id LEFT JOIN classes cl ON cl.id=s.class_id
       WHERE ($1::uuid IS NULL OR q.student_id=$1)

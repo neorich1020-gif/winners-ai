@@ -81,3 +81,6 @@ ALTER TABLE question_sessions ADD COLUMN IF NOT EXISTS hint2_opened BOOLEAN NOT 
 -- (재원 중인 학생끼리만 같은 반 출석번호가 겹치지 않으면 됨. 로그인도 재원 학생만 찾음)
 ALTER TABLE students DROP CONSTRAINT IF EXISTS students_class_id_login_code_key;
 CREATE UNIQUE INDEX IF NOT EXISTS students_active_login_code_uq ON students (class_id, login_code) WHERE active;
+
+-- 학생이 '📖 완성 풀이'를 본 문제인지 (힌트를 받은 뒤 막혔을 때만 공개됨 · 원장님 화면·상담글용)
+ALTER TABLE question_sessions ADD COLUMN IF NOT EXISTS solution_shown BOOLEAN NOT NULL DEFAULT FALSE;

@@ -108,6 +108,7 @@ button{cursor:pointer;border:0;background:none;padding:0}
 .chips::-webkit-scrollbar{display:none}
 .chip{flex:none;padding:8px 14px;border-radius:999px;font-size:14px;font-weight:600;background:var(--surface);box-shadow:var(--shadow-sm);color:var(--ink)}
 .chip.hint{background:var(--hint-soft);color:#8A5A00}
+.chip.sol{background:var(--brand-soft,#ECEEFF);color:var(--brand,#4F5BD5)}
 @media (prefers-color-scheme:dark){.chip.hint{color:#FFCF70}}
 .chip:active,.icon-btn:active,.primary:active{transform:scale(.96)}
 .preview{display:flex;align-items:center;gap:12px;background:var(--surface);border-radius:18px;padding:8px 10px;box-shadow:var(--shadow-lg)}
@@ -247,6 +248,7 @@ button{cursor:pointer;border:0;background:none;padding:0}
   <div class="dock-inner">
     <div class="chips" role="toolbar" aria-label="빠른 버튼">
       <button class="chip hint" id="more-hint">💡 힌트 하나 더</button>
+      <button class="chip sol" id="show-sol" hidden>📖 완성 풀이 보기</button>
       <button class="chip" id="solved">✅ 풀었어요</button>
       <button class="chip" id="new-q">✏️ 새 문제</button>
       <button class="chip fb" id="fb-chip" hidden aria-pressed="false"><span id="fb-chip-label">✍️ 영작 첨삭</span><span class="n" id="fb-chip-n" hidden></span></button>

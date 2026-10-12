@@ -1,7 +1,7 @@
 // 실행 전 준비: PostgreSQL(127.0.0.1:54329, postgres/pw)에 db/schema.sql, db/functions.sql, db/roles.sql 적용 후
 //   node tests/integration.js            (계정 2개 방식)
 //   TEST_DB_URL=<단일 계정 주소> node tests/integration.js   (Render처럼 계정 1개 + node db/setup.js 후)
-// AI는 가짜 응답, 알림톡은 DRY_RUN — 실제 발송·과금 없음 · 통합 테스트 192개
+// AI는 가짜 응답, 알림톡은 DRY_RUN — 실제 발송·과금 없음 · 통합 테스트 198개
 // 주간 상담글 기능 통합 테스트: 실제 PostgreSQL + 실제 서버 + DRY_RUN 발송 (AI만 가짜 응답)
 const crypto = require('crypto');
 Object.assign(process.env, {
@@ -32,6 +32,9 @@ Module._load = function (req, ...rest) {
       }
       if (args.system.includes('1:1 학습 튜터')) {
         const last = JSON.stringify(args.messages.at(-1));
+        if (last.includes('완성 풀이')) {
+          return { content: [{ type: 'text', text: '[SOLUTION]\n[TOPIC: 일차방정식]\n1단계 ▶ 2x + 3 = 11 에서 양변에서 3을 빼면 2x = 8\n💡 개념: 등식의 성질\n2단계 ▶ 양변을 2로 나누면 x = 4\n답: x = 4\n이제 이 풀이를 가리고 혼자 처음부터 다시 써 보자! 다 쓰면 오답노트 사진으로 인증해 줘 📸\n<<SUMMARY>>{"subject":"수학","topic":"일차방정식","weakness_point":"이항할 때 부호","math_wrong_note_assigned":false,"director_note":"풀이 보고 다시 쓰기 확인","parent_cheering_msg":"막힌 줄을 정확히 짚어 질문했어요"}<<END>>' }] };
+        }
         if (last.includes('최종 오답풀이')) {
           return { content: [{ type: 'text', text: '[CHECK]\n[TOPIC: 특수각]\n좋아! 오답노트용 완성 풀이야.\n## **답: BD = 8\\sqrt{3} cm**' }] };
         }
@@ -470,6 +473,20 @@ function client() {
   r = await he('POST', '/api/student/ask', { text: '2x = 8 이니까 x = 4요', sessionId: sidKH });
   ok(r.body.reply.includes('x = 4') && r.body.reply.includes('오답노트에 적어서 인증해줘'), '학생이 풀어 내면 정답 확인 + 오답노트 인증 지시 (확인 답변은 정답 가리기 안 함)', r.body.reply);
   const sm2 = (await admin.query('SELECT summary FROM question_sessions WHERE id=$1', [sidKH])).rows[0].summary;
+  // 📖 완성 풀이: 힌트를 받기 전에는 가리고, 힌트를 받은 뒤 막히면 바로 보여 줌
+  prompts.length = 0;
+  r = await he('POST', '/api/student/ask', { text: '그냥 완성 풀이 보여 주세요' });
+  const sidSol = r.body.sessionId;
+  ok(!r.body.reply.includes('x = 4') && r.body.solutionShown === false && r.body.solutionAvailable === true, '힌트 받기 전 "완성 풀이" 요청 → 아직 안 보여 주고, 완성 풀이 버튼은 켜짐', r.body);
+  ok((prompts.at(-1) || '').includes('아직 공개 전'), '첫 질문 프롬프트: 완성 풀이 아직 공개 전 + "막히면 버튼" 안내');
+  r = await he('POST', '/api/student/ask', { text: '해 봤는데 막혔어요. 완성 풀이를 보여 주세요', sessionId: sidSol });
+  ok(r.body.solutionShown === true && r.body.reply.includes('답: x = 4') && r.body.reply.includes('가리고 혼자 처음부터 다시 써 보자') && r.body.solutionAvailable === false, '힌트 받은 뒤 막히면 완성 풀이 공개 + 가리고 다시 써 보기 안내', r.body);
+  ok((prompts.at(-1) || '').includes('지금 공개 가능'), '힌트 이후 프롬프트: 완성 풀이 공개 가능');
+  const solRow = (await admin.query('SELECT solution_shown, summary FROM question_sessions WHERE id=$1', [sidSol])).rows[0];
+  ok(solRow.solution_shown === true && solRow.summary.solution_shown === true, '완성 풀이를 본 문제로 기록 (원장님 화면·상담글용)', solRow);
+  r = await dir('GET', `/api/director/monitor/sessions`);
+  ok(r.body.some((x) => x.id === sidSol && x.solution_shown === true), '원장님 질문 기록에 "📖 풀이 봄" 표시용 값');
+
   r = await he('POST', '/api/student/ask', { text: '한번 더 전체적으로 정리된 최종 오답풀이를 적어주세요', sessionId: sidKH });
   ok(!r.body.reply.includes('8√3') && !r.body.reply.includes('sqrt'), '학생 풀이 없이 "최종 풀이 적어 줘" → 완성 풀이(답)는 가림', r.body.reply);
   r = await he('POST', '/api/student/ask', { text: '30 60 90 비율 모르겠어요', sessionId: sidKH });

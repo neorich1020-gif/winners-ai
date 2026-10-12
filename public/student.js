@@ -6,6 +6,9 @@
   const MAX_EDGE = 1568;          // Claude 권장 긴 변 크기
   const JPEG_QUALITY = 0.85;
   let sessionId = null, level = 0, photo = null, busy = false, persona = '원장쌤', quota = null;
+  // 📖 완성 풀이 보기: 핵심 힌트형에서 이 문제의 힌트를 한 번 받은 뒤에만 나타남 (막혀서 포기하지 않게)
+  let solAvail = false;
+  const setSol = (v) => { solAvail = !!v; const b = document.getElementById('show-sol'); if (b) b.hidden = !solAvail || fbMode; };
   // 첨삭: fb = { subject:'english'|'math', limit, remaining }, fbMode = 켜짐 여부, retryOf = 고쳐 쓰기 중인 첨삭
   let fb = null, fbMode = false, retryOf = null;
   // 지도 방식: hint_ladder(힌트 4단계) / key_hint(핵심 힌트형: 수학 풀이 전체 → 이해 확인 → 오답노트)
@@ -121,6 +124,7 @@
     $('#ladder-wrap').hidden = fbMode || $('#chat').hidden || keyHint();
     if (fbMode) $('#cam-badge').hidden = true; else renderQuota();   // 첨삭 사진은 사진 질문 횟수와 따로 셈
     ['#more-hint', '#solved', '#new-q'].forEach((s2) => ($(s2).hidden = fbMode));
+    $('#show-sol').hidden = fbMode || !solAvail;
   }
   function setFbMode(on, retry = null) {
     fbMode = on; retryOf = on ? retry : null;
@@ -283,7 +287,7 @@
       $('#preview-img').src = photo.preview;
       $('#preview-info').textContent = `사진 준비 완료 · ${Math.round(blob.size / 1024)}KB\n궁금한 점을 같이 적어도 좋아`;
       $('#preview').hidden = false;
-      if (!fbMode) { sessionId = null; level = 0; renderLadder(); }  // 사진은 보통 새 문제 → 힌트 단계를 처음부터
+      if (!fbMode) { sessionId = null; level = 0; renderLadder(); setSol(false); }  // 사진은 보통 새 문제 → 힌트 단계를 처음부터
       updateSend(); $('#text').focus();
     } catch (e) { add('sys', e.message); }
   }
@@ -316,16 +320,17 @@
   }
 
   // ---- 보내기 ----
-  async function ask({ moreHint = false } = {}) {
+  async function ask({ moreHint = false, solution = false } = {}) {
     if (busy) return;
     if (fbMode && !moreHint) return sendFeedback();
     const text = $('#text').value.trim();
-    if (!text && !photo && !moreHint) return;
+    if (!text && !photo && !moreHint && !solution) return;
     busy = true; updateSend();
-    if (moreHint) add('me', keyHint() ? '🙋 다시 쉽게 설명해 줘' : '💡 힌트 하나 더');
+    if (solution) add('me', '📖 완성 풀이 보여 줘');
+    else if (moreHint) add('me', keyHint() ? '🙋 다시 쉽게 설명해 줘' : '💡 힌트 하나 더');
     else add('me', text, photo?.preview);
-    const body = { text: moreHint ? (text || (keyHint() ? '조금 더 쉽게 다시 설명해 줘' : '힌트 하나 더 주세요')) : text, sessionId, moreHint };
-    const sent = photo && !moreHint ? photo : null;
+    const body = { text: solution ? '해 봤는데 막혔어요. 완성 풀이를 보여 주세요' : moreHint ? (text || (keyHint() ? '조금 더 쉽게 다시 설명해 줘' : '힌트 하나 더 주세요')) : text, sessionId, moreHint };
+    const sent = photo && !moreHint && !solution ? photo : null;
     if (sent) body.image = { mediaType: sent.mediaType, base64: sent.base64 };
     $('#text').value = ''; autoGrow(); $('#preview').hidden = true; if (sent) photo = null;
     const t = typing(sent ? '사진 속 문제를 읽고 있어요…' : '선생님이 생각 중이에요…');
@@ -336,6 +341,7 @@
       t.remove();
       const row = add('ai', r.reply);
       if (r.hint2) addHint2(row, r.hint2, r.sessionId);
+      setSol(r.solutionAvailable);
     } catch (e) {
       t.remove();
       if (e.data?.code === 'PHOTO_QUOTA') {
@@ -357,13 +363,14 @@
     if (level >= 4) return add('sys', '마지막 힌트 단계야. 이제 네 풀이를 보내 줘!');
     ask({ moreHint: true });
   };
+  $('#show-sol').onclick = () => { if (!sessionId) return add('sys', '먼저 문제를 물어봐 줘!'); ask({ solution: true }); };
   $('#solved').onclick = async () => {
     if (!sessionId) return add('sys', '먼저 문제를 물어봐 줘!');
     await api(`/session/${sessionId}/close`, { solved: true }).catch(() => {});
     add('ai', '잘했어! 🎉 스스로 푼 문제로 기록해 둘게. 다음 문제도 화이팅!');
-    sessionId = null; level = 0; renderLadder();
+    sessionId = null; level = 0; renderLadder(); setSol(false);
   };
-  $('#new-q').onclick = () => { sessionId = null; level = 0; renderLadder(); add('sys', '새 문제 시작! 문제를 적거나 사진을 올려 줘'); };
+  $('#new-q').onclick = () => { sessionId = null; level = 0; renderLadder(); setSol(false); add('sys', '새 문제 시작! 문제를 적거나 사진을 올려 줘'); };
 
   // ---- 홈 화면에 추가 (PWA) ----
   let deferred = null;

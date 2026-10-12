@@ -102,20 +102,28 @@ async function answer(client, { academy, cls, student, sessionId, text, wantMore
   }
 
   const keyHint = academy.teaching_mode === 'key_hint';
+  // 완성 풀이 공개 조건(핵심 힌트형): 이 문제에서 힌트를 한 번 이상 받은 뒤 → 학생이 막혀서 포기하지 않게 바로 보여 줌
+  const hintsSoFar = (await client.query(
+    "SELECT count(*)::int AS n FROM messages WHERE session_id=$1 AND role='ai' AND verdict IN ('hint','hint_leak_blocked')", [session.id])).rows[0].n;
+  const solutionUnlocked = keyHint && hintsSoFar >= 1;
   const res = await anthropic.messages.create({
     model: MODEL,
     max_tokens: keyHint ? 1200 : 600,   // 핵심 힌트형은 3칸(퀴즈·흐름·단서) + 요약을 쓰므로 길게
     temperature: 0.4,
-    system: buildSystemPrompt({ academy, cls, student, materials, hintLevel: session.hint_level, hasImage: !!lastImg }),
+    system: buildSystemPrompt({ academy, cls, student, materials, hintLevel: session.hint_level, hasImage: !!lastImg, solutionUnlocked }),
     messages: msgs,
   });
   const raw = res.content.filter((b) => b.type === 'text').map((b) => b.text).join('');
   const { summary } = extractSummary(raw);
   // 정답 노출 검사: 핵심 힌트형은 학생이 직접 쓴 답·풀이·오답노트(숫자·식·사진)를 확인하는 [CHECK] 답변에서만 정답을 말해도 된다.
   // "최종 풀이 적어 주세요"처럼 학생 풀이 없이 [CHECK]로 완성 풀이를 주는 경우는 막는다.
-  const parsed = parseModelOutput(raw);
+  // [SOLUTION](완성 풀이)은 공개 조건을 만족할 때만 그대로 보내고, 아니면 힌트로 보고 정답 노출을 가린다
+  let parsed = parseModelOutput(raw);
+  if (parsed.verdict === 'solution' && !solutionUnlocked) parsed = { ...parsed, verdict: 'hint' };
+  if (parsed.verdict === 'solution') parsed = { ...parsed, hint2: null };
   const ownWork = !!img || /[0-9=]/.test(clean || '');
-  const out = keyHint && parsed.verdict === 'check' && ownWork ? parsed : postCheck(parsed, keyHint ? 0 : session.hint_level);
+  const out = parsed.verdict === 'solution' || (keyHint && parsed.verdict === 'check' && ownWork) ? parsed : postCheck(parsed, keyHint ? 0 : session.hint_level);
+  if (out.verdict === 'solution') await client.query('UPDATE question_sessions SET solution_shown=true WHERE id=$1', [session.id]);
 
   const saved = (await client.query(
     'INSERT INTO messages (academy_id, session_id, role, content, verdict) VALUES ($1,$2,$3,$4,$5) RETURNING id',
@@ -126,13 +134,14 @@ async function answer(client, { academy, cls, student, sessionId, text, wantMore
   if (out.topic) await client.query('UPDATE question_sessions SET topic=COALESCE(topic,$1) WHERE id=$2', [out.topic, session.id]);
   // 학생에게 보이지 않는 요약(막힌 부분·코칭 메모·학부모 칭찬 한 줄) → 원장님 화면과 금요일 상담글 초안에 사용
   // hint2_opened는 튜터가 아니라 시스템이 기록한 값(학생이 실제로 펼쳤는지)을 그대로 이어 붙인다
-  if (summary) await client.query("UPDATE question_sessions SET summary = $1::jsonb || jsonb_build_object('hint2_opened', hint2_opened) WHERE id=$2", [JSON.stringify(summary), session.id]);
+  if (summary) await client.query("UPDATE question_sessions SET summary = $1::jsonb || jsonb_build_object('hint2_opened', hint2_opened, 'solution_shown', solution_shown) WHERE id=$2", [JSON.stringify(summary), session.id]);
   if (out.verdict === 'safety') {
     await client.query("UPDATE question_sessions SET status='flagged' WHERE id=$1", [session.id]);
     await client.query('INSERT INTO safety_flags (academy_id, student_id, message_id, category) VALUES ($1,$2,$3,$4)',
       [academy.id, student.id, saved.id, 'wellbeing']);
   }
-  return { sessionId: session.id, hintLevel: session.hint_level, reply: out.text, hint2: out.hint2 || null, safety: out.verdict === 'safety', withImage: !!img, photo,
+  return { sessionId: session.id, hintLevel: session.hint_level, reply: out.text, hint2: out.hint2 || null, safety: out.verdict === 'safety',
+    solutionShown: out.verdict === 'solution', solutionAvailable: keyHint && out.verdict !== 'solution' && (hintsSoFar >= 1 || out.verdict === 'hint'), withImage: !!img, photo,
     teachingMode: keyHint ? 'key_hint' : 'hint_ladder' };
 }
 

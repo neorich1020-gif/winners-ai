@@ -53,7 +53,7 @@ async function buildStats(academyId, studentId, weekStart, db = pool) {
   const weak = topics.filter((t) => t.h >= 2.5).map((t) => t.topic).slice(0, 2);
   // 튜터가 남긴 대화 요약 (막힌 부분·원장님 코칭 메모·학부모 칭찬 한 줄·오답노트 지시)
   const sums = (await db.query(
-    `SELECT summary || jsonb_build_object('hint2_opened', hint2_opened) AS summary FROM question_sessions
+    `SELECT summary || jsonb_build_object('hint2_opened', hint2_opened, 'solution_shown', solution_shown) AS summary FROM question_sessions
       WHERE academy_id=$1 AND student_id=$2 AND kind='question' AND summary IS NOT NULL
         AND started_at >= ($3::date AT TIME ZONE 'Asia/Seoul')
         AND started_at <  (($3::date + 7) AT TIME ZONE 'Asia/Seoul')
@@ -66,6 +66,7 @@ async function buildStats(academyId, studentId, weekStart, db = pool) {
     cheering: uniq(sums.map((x) => x.parent_cheering_msg), 1),
     wrongNotes: sums.filter((x) => x.math_wrong_note_assigned).length,
     hint2Opened: sums.filter((x) => x.hint2_opened).length,
+    solutionShown: sums.filter((x) => x.solution_shown).length,
     problems: sums.length,
   } : null;
   // 영작·풀이 첨삭 (상담글 초안과 원장 화면에 사용, 학부모 자동 리포트 템플릿에는 넣지 않음)
