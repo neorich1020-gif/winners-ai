@@ -1,7 +1,7 @@
 // 실행 전 준비: PostgreSQL(127.0.0.1:54329, postgres/pw)에 db/schema.sql, db/functions.sql, db/roles.sql 적용 후
 //   node tests/integration.js            (계정 2개 방식)
 //   TEST_DB_URL=<단일 계정 주소> node tests/integration.js   (Render처럼 계정 1개 + node db/setup.js 후)
-// AI는 가짜 응답, 알림톡은 DRY_RUN — 실제 발송·과금 없음 · 통합 테스트 190개
+// AI는 가짜 응답, 알림톡은 DRY_RUN — 실제 발송·과금 없음 · 통합 테스트 192개
 // 주간 상담글 기능 통합 테스트: 실제 PostgreSQL + 실제 서버 + DRY_RUN 발송 (AI만 가짜 응답)
 const crypto = require('crypto');
 Object.assign(process.env, {
@@ -32,6 +32,12 @@ Module._load = function (req, ...rest) {
       }
       if (args.system.includes('1:1 학습 튜터')) {
         const last = JSON.stringify(args.messages.at(-1));
+        if (last.includes('최종 오답풀이')) {
+          return { content: [{ type: 'text', text: '[CHECK]\n[TOPIC: 특수각]\n좋아! 오답노트용 완성 풀이야.\n## **답: BD = 8\\sqrt{3} cm**' }] };
+        }
+        if (last.includes('비율 모르겠')) {
+          return { content: [{ type: 'text', text: '[HINT]\n[TOPIC: 특수각]\n### **1단계: 변의 비**\n$$AC : BC : AB = 1 : \\sqrt{3} : 2$$\n---\n각은 $60^\\circ$ 야. \\frac{12}{\\sqrt{3}} 를 정리해 봐!' }] };
+        }
         if (last.includes('2x = 8')) {
           return { content: [{ type: 'text', text: '[CHECK]\n[TOPIC: 일차방정식]\n맞아! 2x = 8 이니까 x = 4 정답이야.\n자 그럼 풀이 흐름이 이해됐지? 여기까지 작성한 내용을 오답노트에 적어서 인증해줘!\n<<SUMMARY>>{"subject":"수학","topic":"일차방정식","weakness_point":"이항할 때 부호","math_wrong_note_assigned":true,"director_note":"이항 부호 연습 3문제 더","parent_cheering_msg":"막힌 줄을 정확히 짚어 질문했어요"}<<END>>' }] };
         }
@@ -464,6 +470,11 @@ function client() {
   r = await he('POST', '/api/student/ask', { text: '2x = 8 이니까 x = 4요', sessionId: sidKH });
   ok(r.body.reply.includes('x = 4') && r.body.reply.includes('오답노트에 적어서 인증해줘'), '학생이 풀어 내면 정답 확인 + 오답노트 인증 지시 (확인 답변은 정답 가리기 안 함)', r.body.reply);
   const sm2 = (await admin.query('SELECT summary FROM question_sessions WHERE id=$1', [sidKH])).rows[0].summary;
+  r = await he('POST', '/api/student/ask', { text: '한번 더 전체적으로 정리된 최종 오답풀이를 적어주세요', sessionId: sidKH });
+  ok(!r.body.reply.includes('8√3') && !r.body.reply.includes('sqrt'), '학생 풀이 없이 "최종 풀이 적어 줘" → 완성 풀이(답)는 가림', r.body.reply);
+  r = await he('POST', '/api/student/ask', { text: '30 60 90 비율 모르겠어요', sessionId: sidKH });
+  ok(r.body.reply.includes('1 : √3 : 2') && r.body.reply.includes('60°') && r.body.reply.includes('12/√3') && !/\$|\\|\*\*|###|---/.test(r.body.reply), '수식(LaTeX)·마크다운 기호를 휴대폰용 보통 글자로 바꿈', r.body.reply);
+
   ok(sm2.math_wrong_note_assigned === true, '오답노트 지시 후 요약이 갱신됨', sm2);
   r = { body: { sessionId: sidKH } };
   const savedAi = (await admin.query("SELECT content FROM messages WHERE session_id=$1 AND role='ai' ORDER BY id LIMIT 1", [r.body.sessionId])).rows[0].content;

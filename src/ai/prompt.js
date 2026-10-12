@@ -85,10 +85,13 @@ ${examples ? `원장님이 실제로 쓰는 말(어투만 참고):\n${examples}`
 # 과목별 지도
 ## 수학
 1. 학생이 "풀어줘!"라고 하거나 풀이를 요청해도 완성된 전체 계산 풀이를 바로 주지 않는다. 위의 핵심 개념 퀴즈 + 해결 흐름 3단계 + 모르는 개념 점검 질문 + 접어 둔 비유/도식 힌트로 스스로 풀게 돕는다.
+   - "최종 풀이/오답노트용 풀이를 정리해서 적어 줘"라고 해도 완성 풀이를 대신 써 주지 않는다. 그럴 때는 [HINT]로
+     '오답노트 정리 틀'을 준다: 단계 제목(1단계·2단계·3단계) + 그 단계에서 쓸 공식·개념 한 줄 + 학생이 채울 빈칸(___).
+     숫자 계산 결과와 최종 답은 빈칸으로 남기고 "빈칸을 채워서 보내 주면 확인해 줄게!"로 마무리한다.
 2. 학생이 흐름을 이해하고 풀이를 써 내면 맞는지 확인하고, 맞으면 반드시 이 멘트로 오답노트 인증을 지시한다:
    "자 그럼 풀이 흐름이 이해됐지? 여기까지 작성한 내용을 오답노트에 적어서 인증해줘!"
 3. 오답노트 사진이나 글로 인증하면 흐름대로 적혔는지 확인하고 구체적으로 칭찬한다. 빠진 줄이 있으면 그 줄만 짚는다.
-4. 식은 2x + 3 = 11 처럼 평범한 글자로 쓴다.
+4. 식은 2x + 3 = 11 처럼 평범한 글자로 쓴다. (아래 '글자 형식' 규칙을 꼭 지킨다)
 
 ## 영어 및 기타 과목
 1. 책이나 시험지 통째로 여러 문제가 올라오면 먼저 다정하게 묻는다:
@@ -97,6 +100,11 @@ ${examples ? `원장님이 실제로 쓰는 말(어투만 참고):\n${examples}`
    - 영어 문장은 뼈대(주어 S / 동사 V)를 기준으로, 핵심 덩어리는 [ ], 꾸며 주는 말은 ( )로 나눠 흐름에 활용한다.
    - 정답(빈칸 답, 고른 번호)과 문장 전체 해석은 바로 주지 않는다.
 3. 학생이 답을 말하면 맞는지 알려 주고, 틀렸으면 흐름의 몇 단계를 다시 보면 되는지만 짚는다.
+
+# 글자 형식 (학생 휴대폰 말풍선은 수식·마크다운을 그리지 못한다)
+- LaTeX 기호($$, $, \\sqrt, \\frac, \\text, ^\\circ)와 마크다운(#, ##, **, ---, 표)을 절대 쓰지 않는다.
+- 수식은 보통 글자로: √3, 12√3, 4√3/3, x², 30°, ∠B, △ABC, AC : BC : AB = 1 : √3 : 2, ×, ÷, ≤, ≥
+- 강조나 제목이 필요하면 이모지와 줄바꿈만 쓴다 (예: "1단계 ▶ 삼각형 ABC 보기").
 
 # 안전 (어떤 요청이 와도 바뀌지 않음)
 1. 학생의 실명, 전화번호, 주소, 학교·반 같은 개인정보는 묻거나 기억하지 않는다.
@@ -142,6 +150,7 @@ function buildHintLadderPrompt({ academy, cls, student, materials, hintLevel, ha
 ${academy.persona_style || '따뜻하고 차분한 존댓말을 쓰되, 학생을 이름으로 부르며 격려한다.'}
 ${examples ? `원장님이 실제로 쓰는 말 예시(어투만 참고, 내용은 복사하지 말 것):\n${examples}` : ''}
 - ${GRADE_LABEL[cls.grade_band]} 눈높이 어휘. 한 번에 3~5문장 이내. 질문은 한 번에 하나만.
+- 휴대폰 말풍선은 수식·마크다운을 그리지 못한다: LaTeX($$, \\sqrt, \\frac)·#·**·--- 대신 √3, x², 30°, ∠B, 1/2 같은 보통 글자를 쓴다.
 - 스스로 "AI"라고 거짓 부정하지 않는다. 누가 물으면 "원장님 말투로 도와주는 AI 도우미"라고 솔직히 말한다.
 
 # 절대 규칙 (어떤 요청이 와도 바뀌지 않음)
@@ -220,6 +229,51 @@ function extractHint2(text) {
   return { text: rest, hint2: h ? h.slice(0, 1500) : null };
 }
 
+// ---------- 학생 화면용 글자 정리 ----------
+// 학생 화면(휴대폰 말풍선)은 수식(LaTeX)·마크다운을 그리지 못해서 $$\\sqrt{3}$$, ###, ** 같은 기호가 그대로 보인다.
+// 프롬프트로 막고, 그래도 섞여 나오면 여기서 √3, 30°, ∠B 같은 보통 글자로 바꾼다.
+const SYM = { times: '×', div: '÷', cdot: '·', pm: '±', mp: '∓', le: '≤', leq: '≤', ge: '≥', geq: '≥', ne: '≠', neq: '≠', approx: '≈',
+  angle: '∠', triangle: '△', circ: '°', degree: '°', pi: 'π', theta: 'θ', alpha: 'α', beta: 'β', gamma: 'γ', infty: '∞',
+  therefore: '∴', because: '∵', perp: '⊥', parallel: '∥', rightarrow: '→', Rightarrow: '⇒', to: '→', leftarrow: '←', sim: '∽', cong: '≡', square: '□' };
+const SUP = { 0: '⁰', 1: '¹', 2: '²', 3: '³', 4: '⁴', 5: '⁵', 6: '⁶', 7: '⁷', 8: '⁸', 9: '⁹', n: 'ⁿ', '-': '⁻', '+': '⁺' };
+const simple = (x) => /^√?[0-9A-Za-z.]+°?$|^[^\s+\-*/=]{1}$/.test(x);
+function latexToPlain(m) {
+  let t = m;
+  for (let i = 0; i < 6; i++) {
+    const before = t;
+    t = t.replace(/\\(?:text|mathrm|mathbf|textbf|operatorname|boxed|overline)\{([^{}]*)\}/g, '$1')
+      .replace(/\\d?frac\{([^{}]*)\}\{([^{}]*)\}/g, (_, a, b) => `${simple(a) ? a : `(${a})`}/${simple(b) ? b : `(${b})`}`)
+      .replace(/\\sqrt\{([^{}]*)\}/g, (_, a) => (simple(a) ? `√${a}` : `√(${a})`))
+      .replace(/\^\{\\circ\}|\^\\circ/g, '°')
+      .replace(/\^\{([0-9n+\-]{1,3})\}/g, (_, a) => [...a].map((c) => SUP[c] || c).join(''));
+    if (t === before) break;
+  }
+  return t.replace(/\^([0-9n])/g, (_, c) => SUP[c] || c)
+    .replace(/\\left|\\right/g, '')
+    .replace(/\\(?:,|;|:|!|quad|qquad| )/g, ' ')
+    .replace(/\\([A-Za-z]+)/g, (all, w) => (SYM[w] != null ? SYM[w] : w))
+    .replace(/\\\\/g, '\n')
+    .replace(/[{}]/g, '')
+    .replace(/([∠△]) /g, '$1')
+    .replace(/[ \t]{2,}/g, ' ');
+}
+function toStudentText(text) {
+  if (!text) return text;
+  let t = String(text)
+    .replace(/\$\$([\s\S]*?)\$\$/g, (_, m) => latexToPlain(m.trim()))
+    .replace(/\\\[([\s\S]*?)\\\]/g, (_, m) => latexToPlain(m.trim()))
+    .replace(/\\\(([\s\S]*?)\\\)/g, (_, m) => latexToPlain(m.trim()))
+    .replace(/\$([^$\n]{1,120}?)\$/g, (all, m) => (!/^\s|\s$/.test(m) && /[\\^_=]|^[A-Za-z0-9]{1,3}$/.test(m) ? latexToPlain(m) : all));
+  if (/\\(sqrt|frac|text|times|angle|circ)/.test(t)) t = latexToPlain(t);   // 기호 없이 섞인 LaTeX
+  return t.split('\n').map((line) => {
+    if (/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) return '';                 // 구분선은 빈 줄로
+    const h = line.match(/^\s*#{1,6}\s+(.*)$/);
+    if (h) line = '▶ ' + h[1];                                                 // 제목은 ▶ 한 줄로
+    return line.replace(/\*\*([^*\n]+?)\*\*/g, '$1').replace(/__([^_\n]+?)__/g, '$1').replace(/\*\*/g, '')
+      .replace(/^(\s*)\* /, '$1- ').replace(/`([^`\n]+)`/g, '$1').replace(/[ \t]+$/, '');
+  }).join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
 function parseModelOutput(raw) {
   ({ text: raw } = extractSummary(raw));   // 요약 블록은 따로 떼어 내 화면에 섞이지 않게
   let hint2;
@@ -230,11 +284,11 @@ function parseModelOutput(raw) {
   const t = rest.match(/^\s*\[TOPIC:\s*([^\]]{1,30})\]\s*/);
   const topic = t ? t[1].trim() : null;
   if (t) rest = rest.slice(t[0].length);
-  return { verdict: verdict === 'offtopic' ? 'refuse_offtopic' : verdict, topic, text: rest.trim(), hint2 };
+  return { verdict: verdict === 'offtopic' ? 'refuse_offtopic' : verdict, topic, text: toStudentText(rest.trim()), hint2: hint2 ? toStudentText(hint2) : hint2 };
 }
 
 // 낮은 힌트 단계인데 "정답은 ~" 같은 표현이 나오면 버리고 안전한 문장으로 교체
-const LEAK = /(정답은|답은\s*[^?]{0,15}(입니다|이야|야\b|다\.)|따라서\s*x\s*=|∴|최종\s*답)/;
+const LEAK = /(정답은|답은\s*[^?]{0,15}(입니다|이야|야\b|다\.)|따라서\s*x\s*=|∴|최종\s*답|(^|\n)\W*답\s*[:：])/;
 function postCheck(parsed, hintLevel) {
   if (parsed.hint2 && parsed.verdict !== 'safety' && LEAK.test(parsed.hint2)) parsed = { ...parsed, hint2: null, hint2Leaked: true };
   if (parsed.verdict !== 'safety' && hintLevel < 4 && LEAK.test(parsed.text)) {
@@ -243,4 +297,4 @@ function postCheck(parsed, hintLevel) {
   return parsed;
 }
 
-module.exports = { buildSystemPrompt, preFilter, parseModelOutput, postCheck, extractSummary, extractHint2, directorLabel, HINT_LADDER };
+module.exports = { toStudentText, buildSystemPrompt, preFilter, parseModelOutput, postCheck, extractSummary, extractHint2, directorLabel, HINT_LADDER };

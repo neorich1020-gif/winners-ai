@@ -111,9 +111,11 @@ async function answer(client, { academy, cls, student, sessionId, text, wantMore
   });
   const raw = res.content.filter((b) => b.type === 'text').map((b) => b.text).join('');
   const { summary } = extractSummary(raw);
-  // 정답 노출 검사: 핵심 힌트형은 학생 답·오답노트를 확인하는 [CHECK] 답변에서는 정답을 말해도 되므로 건너뛴다
+  // 정답 노출 검사: 핵심 힌트형은 학생이 직접 쓴 답·풀이·오답노트(숫자·식·사진)를 확인하는 [CHECK] 답변에서만 정답을 말해도 된다.
+  // "최종 풀이 적어 주세요"처럼 학생 풀이 없이 [CHECK]로 완성 풀이를 주는 경우는 막는다.
   const parsed = parseModelOutput(raw);
-  const out = keyHint && parsed.verdict === 'check' ? parsed : postCheck(parsed, keyHint ? 0 : session.hint_level);
+  const ownWork = !!img || /[0-9=]/.test(clean || '');
+  const out = keyHint && parsed.verdict === 'check' && ownWork ? parsed : postCheck(parsed, keyHint ? 0 : session.hint_level);
 
   const saved = (await client.query(
     'INSERT INTO messages (academy_id, session_id, role, content, verdict) VALUES ($1,$2,$3,$4,$5) RETURNING id',
