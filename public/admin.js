@@ -119,6 +119,7 @@
     $('#classes').innerHTML = classes.length ? classes.map((c) => `<div class="card cls">
         <div class="row-head" style="margin:0"><h2>${esc(c.name)}</h2><span class="pill">${esc(GRADE[c.grade_band] || '')} ${esc(SUBJ[c.subject] || '')}</span><span class="sp"></span><span class="note">학생 ${c.students}명</span></div>
         <div class="url">${esc(c.qrUrl)}</div>
+        <div class="note">📚 리포트 학습 코스: ${c.course ? esc(c.course.line) : '<span style="color:var(--warn)">설정 안 됨 (반 수정에서 학년 선택)</span>'}</div>
         <div class="acts"><button class="btn small" data-copy="${esc(c.qrUrl)}">주소 복사</button><button class="btn ghost small" data-qr="${esc(c.id)}">QR 보기·저장</button><button class="btn ghost small" data-edit-class="${esc(c.id)}">반 수정</button></div>
       </div>`).join('') : '<div class="card empty">아직 반이 없어요. "+ 반 만들기"로 시작해 주세요.</div>';
     $$('[data-copy]').forEach((b) => (b.onclick = async () => { try { await navigator.clipboard.writeText(b.dataset.copy); toast('주소를 복사했어요. 카톡에 붙여 넣으세요'); } catch { prompt('이 주소를 복사하세요', b.dataset.copy); } }));
@@ -140,14 +141,56 @@
   $('#add-student').onclick = async () => { if (!classes.length) classes = await api('/classes'); if (!classes.length) return toast('먼저 반을 만들어 주세요'); studentForm(null); };
 
   function classForm(c) {
+    const guessGrade = (gb) => ({ elementary: '초5', middle: '중2', high: '고1' }[gb] || '');
     const p = openDrawer(top(c ? '반 수정' : '반 만들기') + `<form class="form" id="cf">
       <label class="f">반 이름<input id="cf-name" maxlength="40" value="${esc(c?.name || '')}" placeholder="예: 중2 수학 A반" required></label>
       <label class="f">과목<select id="cf-subj">${Object.entries(SUBJ).map(([k, v]) => `<option value="${k}" ${c?.subject === k ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
       <label class="f">학년<select id="cf-grade">${Object.entries(GRADE).map(([k, v]) => `<option value="${k}" ${(c?.grade_band || 'middle') === k ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
+      <h3 style="margin:8px 0 0;font-size:15px">📚 학습 코스 (자동 학습 리포트·상담글에 들어가요)</h3>
+      <div class="form two">
+        <label class="f">코스 학년<select id="cf-cgrade"><option value="">선택 안 함</option></select></label>
+        <label class="f">단위<select id="cf-cmode"><option value="month">월별</option><option value="quarter">분기별</option><option value="off">사용 안 함</option></select></label>
+      </div>
+      <label class="f">보낼 코스<select id="cf-cpin"></select></label>
+      <div id="cf-plan" class="note"></div>
       <button class="btn" type="submit">${c ? '저장' : '반 만들기'}</button><p class="msg" id="cf-msg"></p></form>`);
+    const sel = (id) => $(id, p);
+    let plan = null;
+    async function loadPlan() {
+      const subj = sel('#cf-subj').value, grade = sel('#cf-cgrade').value, mode = sel('#cf-cmode').value;
+      const pinSel = sel('#cf-cpin'), keep = pinSel.dataset.v ?? (c?.course_pin != null ? String(c.course_pin) : '');
+      if (!['math', 'english'].includes(subj)) { sel('#cf-plan').textContent = '학습 코스는 영어·수학 반에서 쓸 수 있어요.'; pinSel.innerHTML = ''; return; }
+      if (!grade || mode === 'off') { sel('#cf-plan').textContent = mode === 'off' ? '자동 리포트에 학습 코스를 넣지 않아요.' : '코스 학년을 고르면 1년 코스가 보여요.'; pinSel.innerHTML = ''; return; }
+      plan = await api(`/courses?subject=${subj}&grade=${encodeURIComponent(grade)}`);
+      const list = mode === 'quarter' ? plan.quarters.map((q) => [q.quarter, q.label]) : plan.months.map((m) => [m.month, m.label]);
+      pinSel.innerHTML = `<option value="">자동 (지금 ${mode === 'quarter' ? plan.nowQuarter + '분기' : plan.nowMonth + '월'} 기준으로 바뀜)</option>` +
+        list.map(([v, l]) => `<option value="${v}">${esc(l)} 고정</option>`).join('');
+      pinSel.value = list.some(([v]) => String(v) === keep) ? keep : '';
+      delete pinSel.dataset.v;
+      const now = mode === 'quarter' ? plan.nowQuarter : plan.nowMonth, picked = Number(pinSel.value) || now;
+      const rows = mode === 'quarter'
+        ? plan.quarters.map((q) => `<tr${q.quarter === picked ? ' style="font-weight:700;background:var(--brand-soft)"' : ''}><td>${esc(q.label)}</td><td>${esc(q.title)}</td></tr>`)
+        : plan.months.map((m) => `<tr${m.month === picked ? ' style="font-weight:700;background:var(--brand-soft)"' : ''}><td>${esc(m.label)}</td><td>${esc(m.title)}<div class="note">${esc(m.focus)}</div></td></tr>`);
+      sel('#cf-plan').innerHTML = `<div class="tbl" style="max-height:300px;overflow:auto;border:1px solid var(--line);border-radius:10px"><table>${rows.join('')}</table></div>
+        <p class="note">굵게 표시된 코스가 학부모님 리포트에 들어가요. 가정에서 도와주실 한 가지도 함께 안내돼요.</p>`;
+      const box = sel('#cf-plan .tbl'), on = box && [...box.querySelectorAll('tr')].find((tr) => tr.style.fontWeight === '700');
+      if (on) box.scrollTop = Math.max(0, on.offsetTop - 50);   // 지금 들어갈 코스가 보이게
+    }
+    const gSel = sel('#cf-cgrade');
+    (async () => {
+      const g = (await api('/courses')).grades;
+      gSel.innerHTML += g.map((x) => `<option value="${x}">${x}</option>`).join('');
+      gSel.value = c?.course_grade || guessGrade(sel('#cf-grade').value);
+      sel('#cf-cmode').value = c?.course_mode || 'month';
+      loadPlan().catch((e) => msg('#cf-msg', e.message));
+    })();
+    ['#cf-subj', '#cf-cgrade'].forEach((id) => sel(id).addEventListener('change', () => loadPlan().catch(() => {})));
+    sel('#cf-cmode').addEventListener('change', () => { sel('#cf-cpin').dataset.v = ''; loadPlan().catch(() => {}); });
+    sel('#cf-cpin').addEventListener('change', () => { sel('#cf-cpin').dataset.v = sel('#cf-cpin').value; loadPlan().catch(() => {}); });
     $('#cf', p).onsubmit = async (e) => {
       e.preventDefault();
-      const body = { name: $('#cf-name').value.trim(), subject: $('#cf-subj').value, grade_band: $('#cf-grade').value };
+      const body = { name: $('#cf-name').value.trim(), subject: $('#cf-subj').value, grade_band: $('#cf-grade').value,
+        course_grade: gSel.value || null, course_mode: sel('#cf-cmode').value, course_pin: sel('#cf-cpin').value || null };
       try { await api(c ? `/classes/${c.id}` : '/classes', { method: c ? 'PUT' : 'POST', body }); closeDrawer(); toast(c ? '반 정보를 저장했어요' : '반을 만들었어요. 주소(QR)가 생겼어요'); loadStudents(); }
       catch (err) { msg('#cf-msg', err.message); }
     };

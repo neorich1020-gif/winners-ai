@@ -90,6 +90,8 @@ async function main() {
           `UPDATE academies SET teaching_mode='key_hint'
             WHERE teaching_mode IS NULL AND id IN (SELECT academy_id FROM classes WHERE qr_token IN ($1, $2))`,
           [token, token + '-en']);
+        // 체험 반은 '중2' 기본 학습 코스(월별·자동)로 시작 → 자동 학습 리포트에 이번 달 코스가 들어감
+        await c.query("UPDATE classes SET course_grade='중2' WHERE course_grade IS NULL AND qr_token IN ($1, $2)", [token, token + '-en']);
         const base = (process.env.APP_BASE_URL || process.env.RENDER_EXTERNAL_URL || '').replace(/\/$/, '');
         console.log(`[setup] 학생 체험 주소: ${base}/s/${token}  (출석번호 1, 비밀번호는 DEMO_STUDENT_PIN)`);
         console.log(`[setup] 영어 첨삭 체험 주소: ${base}/s/${token}-en`);

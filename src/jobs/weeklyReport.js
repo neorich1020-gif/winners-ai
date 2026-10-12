@@ -11,6 +11,7 @@
 // 학부모에게 대화 원문은 보내지 않는다 — 통계와 단원명만.
 // =====================================================================
 const { SolapiMessageService } = require('solapi');
+const { courseFor, courseLine } = require('../lib/curriculum');
 const { batchPool: pool } = require('../lib/db'); // 여러 학원을 다루는 배치 → RLS 우회 계정
 const { decrypt } = require('../lib/security');
 const { summarizeReviews } = require('../ai/feedback');
@@ -81,13 +82,13 @@ async function buildStats(academyId, studentId, weekStart, db = pool) {
 }
 
 // ---- 2. 알림톡 변수 (승인된 템플릿의 #{변수}와 1:1 일치해야 함) ----
-function toTemplateVars(academy, student, s) {
+function toTemplateVars(academy, student, s, course) {
   const solvedRate = s.questions ? Math.round((s.solved / s.questions) * 100) : 0;
   let comment;
-  if (s.questions === 0) comment = '이번 주는 AI 질문창 이용이 없었어요. 다음 주에는 막히는 문제를 꼭 물어보도록 응원해 주세요.';
-  else if (s.avg_hint <= 1.5) comment = '힌트를 적게 받고도 스스로 해결하는 힘이 좋아지고 있어요.';
-  else if (s.avg_hint >= 3) comment = '어려워하는 부분이 있어 수업 시간에 한 번 더 짚어 주겠습니다.';
-  else comment = '꾸준히 질문하며 스스로 풀어 보려는 태도가 좋습니다.';
+  if (s.questions === 0) comment = '이번 주는 질문창을 쓰지 않았어요. 다음 주에는 막히는 문제를 꼭 물어보도록 제가 챙기겠습니다.';
+  else if (s.avg_hint <= 1.5) comment = '힌트를 적게 받고도 스스로 풀어내는 힘이 붙고 있어요. 많이 칭찬해 주세요.';
+  else if (s.avg_hint >= 3) comment = '어려워한 부분이 있어서 수업 시간에 제가 한 번 더 짚어 주겠습니다.';
+  else comment = '막히면 포기하지 않고 꾸준히 물어보며 풀고 있어요. 이 습관이 참 좋습니다.';
   return {
     '#{학원명}': academy.name,
     '#{학생명}': student.nickname,
@@ -96,6 +97,8 @@ function toTemplateVars(academy, student, s) {
     '#{해결률}': `${solvedRate}%`,
     '#{학습단원}': s.topics.slice(0, 3).join(', ') || '-',
     '#{보완단원}': s.weak.join(', ') || '없음',
+    '#{학습코스}': course ? `${courseLine(course)} (목표: ${course.focus})` : '반 진도에 맞춰 학습 중',
+    '#{가정학습}': course?.tip || '오늘 배운 것 하나를 아이가 설명해 보게 해 주세요.',
     '#{원장코멘트}': comment,
   };
 }
@@ -103,10 +106,12 @@ function toTemplateVars(academy, student, s) {
 // 학부모 화면에 보이게 될 최종 문장 (DB 기록 & DRY_RUN 확인용)
 function renderPreview(v) {
   return `[${v['#{학원명}']}] ${v['#{학생명}']} 학생 주간 학습 리포트
+■ 이번 달 학습 코스: ${v['#{학습코스}']}
 ■ 이번 주 학습일: ${v['#{학습일수}']}일
 ■ 질문한 문제: ${v['#{질문수}']}개 (스스로 해결 ${v['#{해결률}']})
 ■ 공부한 단원: ${v['#{학습단원}']}
 ■ 보완이 필요한 단원: ${v['#{보완단원}']}
+■ 가정에서 도와주세요: ${v['#{가정학습}']}
 ■ 원장 코멘트: ${v['#{원장코멘트}']}`;
 }
 
@@ -161,8 +166,10 @@ function counselTemplateVars(academy, student, note, token) {
 // 승인되지 않은 초안(draft)은 절대 발송하지 않는다.
 async function processAcademy(academy, weekStart) {
   const targets = (await pool.query(
-    `SELECT s.id AS student_id, s.nickname, g.id AS guardian_id, g.phone_enc
+    `SELECT s.id AS student_id, s.nickname, g.id AS guardian_id, g.phone_enc,
+            cl.subject, cl.course_grade, cl.course_mode, cl.course_pin
        FROM students s JOIN guardians g ON g.student_id = s.id
+       LEFT JOIN classes cl ON cl.id = s.class_id
       WHERE s.academy_id=$1 AND s.active
         AND g.consent_report_at IS NOT NULL AND g.consent_privacy_at IS NOT NULL AND NOT g.report_opt_out`,
     [academy.id])).rows;
@@ -192,7 +199,8 @@ async function processAcademy(academy, weekStart) {
     } else if (academy.stats_fallback) {
       kind = 'stats';
       templateId = process.env.KAKAO_TEMPLATE_WEEKLY;
-      vars = toTemplateVars(academy, t, stats);
+      const course = courseFor({ subject: t.subject, grade: t.course_grade, mode: t.course_mode, pin: t.course_pin });
+      vars = toTemplateVars(academy, t, stats, course);
       preview = renderPreview(vars);
     } else {
       await pool.query(

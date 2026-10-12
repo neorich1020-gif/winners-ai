@@ -18,7 +18,7 @@ CREATE TABLE academies (
   report_time      TIME NOT NULL DEFAULT '18:00',  -- 한국시간
   report_enabled   BOOLEAN NOT NULL DEFAULT TRUE,
   -- 주간 상담글 관련
-  counsel_tone     TEXT NOT NULL DEFAULT '따뜻하고 꼼꼼하게. 학부모님께 정중한 존댓말, 구체적인 장면 하나와 다음 주 계획을 꼭 넣는다.',
+  counsel_tone     TEXT NOT NULL DEFAULT '원장님이 직접 카톡을 쓰듯 따뜻하고 담백하게. 이번 주 아이의 구체적인 한 장면과 다음 주 계획, 가정에서 도와주실 한 가지를 짧게.',
   counsel_signature TEXT NOT NULL DEFAULT '',            -- 예: "위너스학원 원장 김OO 드림"
   stats_fallback   BOOLEAN NOT NULL DEFAULT TRUE,        -- 승인된 상담글이 없는 학생은 자동 통계 리포트로 대신 발송
   plan_status      TEXT NOT NULL DEFAULT 'trial'   -- trial | active | past_due | canceled

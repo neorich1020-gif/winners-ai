@@ -7,6 +7,7 @@ const { signStaff, requireAuth, cookieOpts, encrypt, decrypt, hmac, normalizePho
 const { toCard, listPlans, getPlan, capacityStatus, photoUsage, feedbackUsage } = require('../lib/plans');
 
 const QRCode = require('qrcode');
+const CURRICULUM = require('../lib/curriculum');
 
 const r = express.Router();
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -154,24 +155,35 @@ function checkClass(b) {
   if (!name) throw bad('반 이름을 적어 주세요');
   if (!SUBJECTS.includes(b.subject)) throw bad('과목을 골라 주세요');
   if (!GRADES.includes(b.grade_band)) throw bad('학년(초·중·고)을 골라 주세요');
-  return { name, subject: b.subject, grade_band: b.grade_band };
+  // 학습 코스 (자동 학습 리포트·상담글용): 학년 초3~고3, 월별/분기별/안 씀, 고정 달·분기(없으면 자동)
+  const course_grade = b.course_grade ? String(b.course_grade) : null;
+  if (course_grade && !CURRICULUM.GRADES.includes(course_grade)) throw bad('코스 학년을 다시 골라 주세요');
+  const course_mode = ['month', 'quarter', 'off'].includes(b.course_mode) ? b.course_mode : 'month';
+  const pin = b.course_pin == null || b.course_pin === '' ? null : Number(b.course_pin);
+  if (pin != null && !(Number.isInteger(pin) && pin >= 1 && pin <= (course_mode === 'quarter' ? 4 : 12))) throw bad('고정할 달·분기를 다시 골라 주세요');
+  return { name, subject: b.subject, grade_band: b.grade_band, course_grade, course_mode, course_pin: pin };
 }
+const classCourse = (x) => CURRICULUM.courseFor({ subject: x.subject, grade: x.course_grade, mode: x.course_mode, pin: x.course_pin });
 r.get('/classes', auth, async (req, res, next) => {
   try {
     const rows = await T(req, async (c) => (await c.query(
-      `SELECT cl.id, cl.name, cl.subject, cl.grade_band, cl.qr_token, cl.created_at,
+      `SELECT cl.id, cl.name, cl.subject, cl.grade_band, cl.qr_token, cl.created_at, cl.course_grade, cl.course_mode, cl.course_pin,
               count(s.id) FILTER (WHERE s.active)::int AS students
          FROM classes cl LEFT JOIN students s ON s.class_id = cl.id
         GROUP BY cl.id ORDER BY cl.created_at`)).rows);
-    res.json(rows.map((x) => ({ ...x, qrUrl: classUrl(x.qr_token) })));
+    res.json(rows.map((x) => {
+      const c = classCourse(x);
+      return { ...x, qrUrl: classUrl(x.qr_token), course: c ? { label: c.label, title: c.title, line: CURRICULUM.courseLine(c) } : null };
+    }));
   } catch (e) { next(e); }
 });
 r.post('/classes', auth, ownerOnly, async (req, res, next) => {
   try {
     const v = checkClass(req.body || {});
     const row = await T(req, async (c) => (await c.query(
-      'INSERT INTO classes (academy_id, name, subject, grade_band) VALUES ($1,$2,$3,$4) RETURNING id, name, subject, grade_band, qr_token',
-      [req.user.aid, v.name, v.subject, v.grade_band])).rows[0]);
+      `INSERT INTO classes (academy_id, name, subject, grade_band, course_grade, course_mode, course_pin) VALUES ($1,$2,$3,$4,$5,$6,$7)
+       RETURNING id, name, subject, grade_band, qr_token, course_grade, course_mode, course_pin`,
+      [req.user.aid, v.name, v.subject, v.grade_band, v.course_grade, v.course_mode, v.course_pin])).rows[0]);
     res.json({ ...row, students: 0, qrUrl: classUrl(row.qr_token) });
   } catch (e) { next(e); }
 });
@@ -180,11 +192,25 @@ r.put('/classes/:id', auth, ownerOnly, async (req, res, next) => {
     if (!UUID.test(req.params.id)) throw bad('없는 반이에요', 404);
     const v = checkClass(req.body || {});
     const row = await T(req, async (c) => (await c.query(
-      'UPDATE classes SET name=$2, subject=$3, grade_band=$4 WHERE id=$1 RETURNING id', [req.params.id, v.name, v.subject, v.grade_band])).rows[0]);
+      'UPDATE classes SET name=$2, subject=$3, grade_band=$4, course_grade=$5, course_mode=$6, course_pin=$7 WHERE id=$1 RETURNING id',
+      [req.params.id, v.name, v.subject, v.grade_band, v.course_grade, v.course_mode, v.course_pin])).rows[0]);
     if (!row) throw bad('없는 반이에요', 404);
     res.json({ ok: true });
   } catch (e) { next(e); }
 });
+// 학년별 기본 학습 코스 목록 (반 설정 화면에서 12개월·4분기 미리 보기)
+r.get('/courses', auth, (req, res) => {
+  const subject = req.query.subject === 'english' ? 'english' : 'math';
+  const grade = CURRICULUM.GRADES.includes(req.query.grade) ? req.query.grade : null;
+  if (!grade) return res.json({ grades: CURRICULUM.GRADES, months: [], quarters: [] });
+  const month = new Date(Date.now() + 9 * 3600e3).getUTCMonth() + 1;
+  res.json({
+    grades: CURRICULUM.GRADES, subject, grade, nowMonth: month, nowQuarter: CURRICULUM.quarterOf(month),
+    months: CURRICULUM.yearPlan(subject, grade).map((c) => ({ month: c.month, label: c.label, title: c.title, focus: c.focus, tip: c.tip })),
+    quarters: [1, 2, 3, 4].map((q) => { const c = CURRICULUM.quarterCourse(subject, grade, q, 0); return { quarter: q, label: c.label, title: c.title }; }),
+  });
+});
+
 // 반 QR 이미지 (인쇄용 PNG). 학원 분리(RLS)로 다른 학원 반은 조회되지 않음
 r.get('/classes/:id/qr.png', auth, async (req, res, next) => {
   try {

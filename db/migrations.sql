@@ -84,3 +84,19 @@ CREATE UNIQUE INDEX IF NOT EXISTS students_active_login_code_uq ON students (cla
 
 -- 학생이 '📖 완성 풀이'를 본 문제인지 (힌트를 받은 뒤 막혔을 때만 공개됨 · 원장님 화면·상담글용)
 ALTER TABLE question_sessions ADD COLUMN IF NOT EXISTS solution_shown BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- ---------- 2026-10 학년·월별 기본 학습 코스 (자동 학습 리포트·상담글에 사용) ----------
+-- course_grade: 초3~고3 / course_mode: month(월별) | quarter(분기별) | off / course_pin: 고정할 달(1~12) 또는 분기(1~4), NULL이면 날짜 따라 자동
+ALTER TABLE classes ADD COLUMN IF NOT EXISTS course_grade TEXT;
+ALTER TABLE classes ADD COLUMN IF NOT EXISTS course_mode TEXT NOT NULL DEFAULT 'month';
+ALTER TABLE classes ADD COLUMN IF NOT EXISTS course_pin SMALLINT;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='classes_course_mode_check') THEN
+    ALTER TABLE classes ADD CONSTRAINT classes_course_mode_check CHECK (course_mode IN ('month','quarter','off'));
+  END IF;
+END $$;
+
+-- 주간 상담글: 원장님 손글씨 같은 짧은 카톡 (400자 이내)
+UPDATE academies SET counsel_tone = '원장님이 직접 카톡을 쓰듯 따뜻하고 담백하게. 이번 주 아이의 구체적인 한 장면과 다음 주 계획, 가정에서 도와주실 한 가지를 짧게.'
+ WHERE counsel_tone LIKE '따뜻하고 꼼꼼하게. 학부모님께 정중한 존댓말, 구체적인 장면%';
+ALTER TABLE academies ALTER COLUMN counsel_tone SET DEFAULT '원장님이 직접 카톡을 쓰듯 따뜻하고 담백하게. 이번 주 아이의 구체적인 한 장면과 다음 주 계획, 가정에서 도와주실 한 가지를 짧게.';

@@ -13,6 +13,7 @@ const express = require('express');
 const { withTenant, audit } = require('../lib/db');
 const { requireAuth } = require('../lib/security');
 const { generateCounsel, reviewCounsel, MAX_CHARS } = require('../ai/counsel');
+const { courseFor } = require('../lib/curriculum');
 const { buildStats, mondayOf, nowKST } = require('../jobs/weeklyReport');
 
 const r = express.Router();
@@ -145,7 +146,10 @@ async function generateOne(c, aid, staffId, studentId, week) {
   const { st, note } = await getOrCreateNote(c, aid, studentId, wk);
   if (locked(note)) throw Object.assign(new Error('이미 발송된 상담글입니다'), { status: 409 });
   const stats = await buildStats(aid, studentId, wk, c);
-  const { text, warnings } = await generateCounsel({ academy, student: st, note, stats });
+  // 반에 정해 둔 이번 달(분기) 학습 코스 → 상담글의 "다음 주 계획" 재료
+  const cls = (await c.query('SELECT cl.subject, cl.course_grade, cl.course_mode, cl.course_pin FROM students s JOIN classes cl ON cl.id=s.class_id WHERE s.id=$1', [studentId])).rows[0];
+  const course = cls ? courseFor({ subject: cls.subject, grade: cls.course_grade, mode: cls.course_mode, pin: cls.course_pin }) : null;
+  const { text, warnings } = await generateCounsel({ academy, student: st, note, stats, course });
   await c.query(
     `UPDATE counsel_notes SET draft_text=$2, final_text=$2, status='draft', gen_count=gen_count+1,
             approved_at=NULL, approved_by=NULL, updated_at=now() WHERE id=$1`, [note.id, text]);
