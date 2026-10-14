@@ -98,7 +98,6 @@ function toTemplateVars(academy, student, s, course) {
     '#{학습단원}': s.topics.slice(0, 3).join(', ') || '-',
     '#{보완단원}': s.weak.join(', ') || '없음',
     '#{학습코스}': course ? `${courseLine(course)} (목표: ${course.focus})` : '반 진도에 맞춰 학습 중',
-    '#{가정학습}': course?.tip || '오늘 배운 것 하나를 아이가 설명해 보게 해 주세요.',
     '#{원장코멘트}': comment,
   };
 }
@@ -111,7 +110,6 @@ function renderPreview(v) {
 ■ 질문한 문제: ${v['#{질문수}']}개 (스스로 해결 ${v['#{해결률}']})
 ■ 공부한 단원: ${v['#{학습단원}']}
 ■ 보완이 필요한 단원: ${v['#{보완단원}']}
-■ 가정에서 도와주세요: ${v['#{가정학습}']}
 ■ 원장 코멘트: ${v['#{원장코멘트}']}`;
 }
 

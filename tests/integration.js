@@ -220,7 +220,7 @@ function client() {
   const counselLog = logs.find((l) => l.includes('(상담글)'));
   ok(counselLog && counselLog.includes('위너스학원 원장 김OO 드림') && counselLog.includes('010****2222'), '알림톡 본문에 서명 포함, 로그엔 번호 가려짐');
   const statsLog = logs.find((l) => l.includes('(통계)') && l.includes('하은'));
-  ok(statsLog && /이번 달 학습 코스: \d+월 중2 수학: .+\(목표: /.test(statsLog) && statsLog.includes('가정에서 도와주세요:'), '자동 학습 리포트에 반의 이번 달 학습 코스 + 가정 도움 한 가지', statsLog);
+  ok(statsLog && /이번 달 학습 코스: \d+월 중2 수학: .+\(목표: /.test(statsLog) && !statsLog.includes('가정에서 도와주세요'), '자동 학습 리포트에 반의 이번 달 학습 코스 (가정 도움 줄은 없음)', statsLog);
   const before = logs.filter((l) => l.startsWith('[DRY_RUN]')).length;
   await runWeeklyReports({ force: true });
   ok(logs.filter((l) => l.startsWith('[DRY_RUN]')).length === before, '한 번 더 돌려도 중복 발송 없음');

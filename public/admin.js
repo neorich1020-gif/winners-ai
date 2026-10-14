@@ -172,7 +172,7 @@
         ? plan.quarters.map((q) => `<tr${q.quarter === picked ? ' style="font-weight:700;background:var(--brand-soft)"' : ''}><td>${esc(q.label)}</td><td>${esc(q.title)}</td></tr>`)
         : plan.months.map((m) => `<tr${m.month === picked ? ' style="font-weight:700;background:var(--brand-soft)"' : ''}><td>${esc(m.label)}</td><td>${esc(m.title)}<div class="note">${esc(m.focus)}</div></td></tr>`);
       sel('#cf-plan').innerHTML = `<div class="tbl" style="max-height:300px;overflow:auto;border:1px solid var(--line);border-radius:10px"><table>${rows.join('')}</table></div>
-        <p class="note">굵게 표시된 코스가 학부모님 리포트에 들어가요. 가정에서 도와주실 한 가지도 함께 안내돼요.</p>`;
+        <p class="note">굵게 표시된 코스가 학부모님 리포트에 들어가요.</p>`;
       const box = sel('#cf-plan .tbl'), on = box && [...box.querySelectorAll('tr')].find((tr) => tr.style.fontWeight === '700');
       if (on) box.scrollTop = Math.max(0, on.offsetTop - 50);   // 지금 들어갈 코스가 보이게
     }
