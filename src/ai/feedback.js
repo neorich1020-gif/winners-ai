@@ -15,7 +15,17 @@ const { maskPII } = require('../lib/security');
 const { getPlan, consumeFeedback } = require('../lib/plans');
 const { parseImage } = require('./tutor');
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const anthropicClient = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+// 리포트용 모델(AI_REPORT_MODEL)이 안 되면(모델 이름 오류·권한·과부하) 학생 질문창에서 쓰는 기본 모델로 한 번 더 시도
+const FALLBACK_MODEL = process.env.AI_MODEL || 'claude-haiku-4-5-20251001';
+const anthropic = { messages: { create: async (args) => {
+  try { return await anthropicClient.messages.create(args); }
+  catch (e) {
+    if (args.model === FALLBACK_MODEL || e.status === 401 || /credit|balance|billing/i.test(String(e.message))) throw e;
+    console.error('[ai] 모델', args.model, '실패 → 기본 모델로 재시도:', e.status, String(e.message).slice(0, 200));
+    return anthropicClient.messages.create({ ...args, model: FALLBACK_MODEL });
+  }
+} } };
 // 손글씨 읽기가 중요해서 보고서용(상위) 모델을 기본으로 쓴다
 const MODEL = process.env.AI_FEEDBACK_MODEL || process.env.AI_REPORT_MODEL || process.env.AI_MODEL || 'claude-haiku-4-5-20251001';
 

@@ -98,6 +98,16 @@ app.use((err, req, res, _next) => {
   // Claude API 오류(키 오류 401, 크레딧 부족 400, 과부하 429/529 등)는 학생 로그인 문제가 아니므로
   // 그대로 넘기지 않고 503 "잠시 후" 안내로 바꾼다 (401을 넘기면 학생 화면이 로그아웃됨)
   if (err.headers && err.status && !err.code) {
+    // 원장님 화면에는 원인을 알려 줘서 직접 고칠 수 있게 한다 (학생 화면은 그대로 '잠시 후')
+    if (req.path.startsWith('/api/director')) {
+      const m = String(err.message || '');
+      const why = err.status === 401 ? 'AI 키가 맞지 않아요. 렌더 Environment의 ANTHROPIC_API_KEY를 확인해 주세요.'
+        : /credit|balance|billing/i.test(m) ? 'Claude API 크레딧(충전 잔액)이 부족해요. console.anthropic.com → Billing에서 충전해 주세요.'
+        : err.status === 404 || /model/i.test(m) ? 'AI 모델 이름이 맞지 않아요. 렌더 Environment의 AI_REPORT_MODEL 값을 확인해 주세요.'
+        : err.status === 429 || err.status === 529 ? 'AI 서버가 잠깐 붐벼요. 1~2분 뒤 다시 눌러 주세요.'
+        : `AI 연결 오류(${err.status}). 잠시 후 다시 눌러 주세요.`;
+      return res.status(503).json({ error: why });
+    }
     return res.status(503).json({ error: 'AI 선생님 연결이 잠깐 안 돼요. 잠시 후 다시 보내 줘!' });
   }
   const status = err.status || 500;
