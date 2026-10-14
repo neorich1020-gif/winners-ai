@@ -1,7 +1,7 @@
 // 실행 전 준비: PostgreSQL(127.0.0.1:54329, postgres/pw)에 db/schema.sql, db/functions.sql, db/roles.sql 적용 후
 //   node tests/integration.js            (계정 2개 방식)
 //   TEST_DB_URL=<단일 계정 주소> node tests/integration.js   (Render처럼 계정 1개 + node db/setup.js 후)
-// AI는 가짜 응답, 알림톡은 DRY_RUN — 실제 발송·과금 없음 · 통합 테스트 213개
+// AI는 가짜 응답, 알림톡은 DRY_RUN — 실제 발송·과금 없음 · 통합 테스트 219개
 // 주간 상담글 기능 통합 테스트: 실제 PostgreSQL + 실제 서버 + DRY_RUN 발송 (AI만 가짜 응답)
 const crypto = require('crypto');
 Object.assign(process.env, {
@@ -23,6 +23,7 @@ const Module = require('module');
 const prompts = [];
 const origLoad = Module._load;
 Module._load = function (req, ...rest) {
+  if (req === 'solapi') return { SolapiMessageService: class { async send(o) { global.solapiSent = o; return { groupInfo: { groupId: 'G-TEST' } }; } } };
   if (req === '@anthropic-ai/sdk') {
     return class { constructor() { this.messages = { create: async (args) => {
       prompts.push(args.system); global.lastMessages = args.messages;
@@ -614,6 +615,22 @@ function client() {
   await dir('PUT', `/api/director/counsel/${st['서연']}`, { subject: '수학', progress: 'LONGTEST 기울기 복습', attitude: '성실' });
   r = await dir('POST', `/api/director/counsel/${st['서연']}/generate`);
   ok(r.status === 200 && [...(r.body.text || r.body.draft_text || r.body.final_text || '')].length <= 400, '초안이 400자를 넘으면 자동으로 한 번 줄여 줌', r.body);
+
+  origLog('\n── 19. 원장님이 등록한 리포트 템플릿 하나로 발송 · 내 폰 테스트 발송 ──');
+  r = await dir('POST', `/api/director/counsel/${st['민준']}/test-send`, { phone: '010-2000-5369' });
+  ok(r.status === 400 && /솔라피 키/.test(r.body.error), '솔라피 키가 없으면 무엇을 넣어야 하는지 안내', r.body);
+  Object.assign(process.env, { SOLAPI_API_KEY: 'k', SOLAPI_API_SECRET: 's', KAKAO_PF_ID: 'PF1', KAKAO_TEMPLATE_REPORT: 'TPL_REPORT' });
+  r = await dir('POST', `/api/director/counsel/${st['민준']}/test-send`, { phone: '12' });
+  ok(r.status === 400 && /번호/.test(r.body.error), '받을 번호 형식 검사');
+  r = await dir('POST', `/api/director/counsel/${st['민준']}/test-send`, { phone: '010-2000-5369' });
+  const sv = global.solapiSent?.kakaoOptions?.variables || {};
+  ok(r.status === 200 && global.solapiSent.to === '01020005369' && global.solapiSent.kakaoOptions.templateId === 'TPL_REPORT' && global.solapiSent.kakaoOptions.pfId === 'PF1', '테스트 발송: 원장님 번호로 등록 템플릿 1건 (DRY_RUN이어도 실제 발송)', r.body);
+  ok(['#{학부모이름}', '#{학생이름}', '#{기간}', '#{과목명}', '#{학습상태}', '#{수업태도}', '#{원장의견}'].every((k) => typeof sv[k] === 'string' && sv[k].length) && sv['#{학생이름}'] === '민준' && /^\d+\/\d+~\d+\/\d+$/.test(sv['#{기간}']), '템플릿 빈칸 7개 모두 채움', sv);
+  r = await other('POST', `/api/director/counsel/${st['민준']}/test-send`, { phone: '010-2000-5369' });
+  ok(r.status === 404, '다른 학원 학생으로는 테스트 발송 불가', r.status);
+  const cpU = buildCounselPrompt({ academy: { name: '위너스학원', director_name: '원장', counsel_tone: '따뜻하게' }, student: { nickname: '민준' }, note: { subject: '수학', progress: 'x', attitude: 'y' }, stats: null });
+  ok(cpU.includes('"✦ 종합 의견:" 칸에 들어간다') && cpU.includes('인사·자기소개·끝인사·감사 인사는 절대 쓰지 않는다'), '등록 템플릿 사용 시 상담글은 인사 없이 종합 의견 본문만');
+  for (const k of ['SOLAPI_API_KEY', 'SOLAPI_API_SECRET', 'KAKAO_PF_ID', 'KAKAO_TEMPLATE_REPORT']) delete process.env[k];
   origLog('\n── DRY_RUN 미리보기 (민준 학부모님께 갈 카톡) ──\n' + counselLog);
   origLog(`\n결과: 통과 ${pass} / 실패 ${fail}`);
   process.exit(fail ? 1 : 0);

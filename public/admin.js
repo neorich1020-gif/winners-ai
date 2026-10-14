@@ -282,7 +282,12 @@
       <div class="counter" id="ed-count"></div><ul class="warnlist" id="ed-warn"></ul>
       <div class="acts"><button class="btn ghost" id="ed-gen">${r.final_text ? '다시 생성' : 'AI 초안 만들기'}</button><button class="btn ghost" id="ed-save">수정 저장</button>
         <span style="flex:1"></span>${r.status === 'approved' ? '<button class="btn ghost" id="ed-unok">승인 취소</button>' : ''}<button class="btn" id="ed-ok" ${r.status === 'sent' ? 'disabled' : ''}>승인하고 발송 예약</button></div>
-      <p class="msg" id="ed-msg"></p></div>`);
+      <p class="msg" id="ed-msg"></p>
+      <div class="card" style="margin-top:6px;padding:12px 14px;box-shadow:none;border:1px dashed var(--line)">
+        <b style="font-size:14px">📱 내 폰으로 테스트 발송</b>
+        <p class="note" style="margin:4px 0 8px">지금 본문(없으면 자동 리포트)을 솔라피 알림톡으로 원장님 번호에만 1건 보내요. 학부모님께는 가지 않아요.</p>
+        <div class="row-head" style="margin:0;gap:8px"><input id="ed-phone" inputmode="tel" maxlength="13" placeholder="010-0000-0000" style="flex:1;min-width:0">
+        <button class="btn ghost" id="ed-test">테스트 발송</button></div></div></div>`);
     const ta = $('#ed-text', p);
     const count = () => { const n = [...ta.value].length; const c = $('#ed-count'); c.textContent = `${n} / ${cs.maxChars}자`; c.className = 'counter' + (n > cs.maxChars ? ' over' : ''); };
     ta.oninput = count; count();
@@ -303,6 +308,19 @@
         await api(`/counsel/${sid}/text`, { method: 'PUT', body: { text: ta.value } });
         const a = await api(`/counsel/${sid}/approve`, { body: {} }); closeDrawer(); toast(`승인했어요 · ${a.sendAt} 발송`); loadCounsel();
       } catch (err) { msg('#ed-msg', err.message); }
+    };
+    try { $('#ed-phone', p).value = localStorage.getItem('mt-test-phone') || ''; } catch {}
+    $('#ed-test', p).onclick = async (e) => {
+      const b = e.currentTarget, phone = $('#ed-phone', p).value.trim();
+      if (!phone) return msg('#ed-msg', '받을 번호(원장님 휴대폰)를 적어 주세요');
+      try { localStorage.setItem('mt-test-phone', phone); } catch {}
+      b.disabled = true; b.textContent = '보내는 중…';
+      try {
+        if (ta.value.trim() && ta.value !== (r.final_text || '') && r.status !== 'sent') await api(`/counsel/${sid}/text`, { method: 'PUT', body: { text: ta.value } });
+        const t = await api(`/counsel/${sid}/test-send`, { body: { phone } });
+        msg('#ed-msg', `보냈어요! 1~2분 안에 카톡을 확인해 주세요 (${t.kind === 'counsel' ? '상담글' : '자동 리포트'})`, true);
+      } catch (err) { msg('#ed-msg', err.message); }
+      finally { b.disabled = false; b.textContent = '테스트 발송'; }
     };
     $('#ed-unok', p)?.addEventListener('click', async () => { await api(`/counsel/${sid}/unapprove`, { body: {} }); closeDrawer(); toast('승인을 취소했어요'); loadCounsel(); });
   }

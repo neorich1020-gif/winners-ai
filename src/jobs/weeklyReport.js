@@ -17,7 +17,9 @@ const { decrypt } = require('../lib/security');
 const { summarizeReviews } = require('../ai/feedback');
 
 const DRY = process.env.DRY_RUN === '1';
-const sms = DRY ? null : new SolapiMessageService(process.env.SOLAPI_API_KEY, process.env.SOLAPI_API_SECRET);
+const hasSolapi = () => !!(process.env.SOLAPI_API_KEY && process.env.SOLAPI_API_SECRET);
+let smsClient = null;
+const sms = () => (smsClient ||= new SolapiMessageService(process.env.SOLAPI_API_KEY, process.env.SOLAPI_API_SECRET));
 
 // ---- KST 시간 유틸 ----
 function nowKST() {
@@ -123,10 +125,10 @@ const COUNSEL_MODE = process.env.COUNSEL_MODE === 'link' ? 'link' : 'inline';
 
 async function sendAlimtalk(phone, templateId, vars, preview, buttons) {
   if (DRY) {
-    console.log('[DRY_RUN] →', phone.slice(0, 3) + '****' + phone.slice(-4), `(${templateId === process.env.KAKAO_TEMPLATE_COUNSEL ? '상담글' : '통계'})\n` + preview);
+    console.log('[DRY_RUN] →', phone.slice(0, 3) + '****' + phone.slice(-4), `(${templateId === process.env.KAKAO_TEMPLATE_COUNSEL || preview.includes('종합 의견') ? '상담글' : '통계'})\n` + preview);
     return { messageId: 'dry-run' };
   }
-  const r = await sms.send({
+  const r = await sms().send({
     to: phone,
     from: process.env.SENDER_PHONE,
     kakaoOptions: {
@@ -158,6 +160,34 @@ function counselTemplateVars(academy, student, note, token) {
   };
 }
 
+// ---- 원장님이 솔라피에 등록한 '주간 학습 리포트' 템플릿 하나로 상담글·자동 리포트를 모두 보내는 방식 ----
+// KAKAO_TEMPLATE_REPORT 에 템플릿 ID를 넣으면 이 방식을 쓴다. 템플릿 본문(인사·끝인사·원장님 이름)은 솔라피에 등록된 그대로이고,
+// 아래 7개 빈칸만 학생마다 채운다:
+//   #{학부모이름} #{학생이름} #{기간} #{과목명} #{학습상태} #{수업태도} #{원장의견}
+const UNIFIED = () => process.env.KAKAO_TEMPLATE_REPORT || '';
+const SUBJ_KO = { math: '수학', english: '영어', science: '과학', korean: '국어', etc: '기타' };
+function weekRange(weekStart) {
+  const d = new Date(weekStart + 'T00:00:00Z'), e = new Date(d.getTime() + 4 * 86400e3);
+  const f = (x) => `${x.getUTCMonth() + 1}/${x.getUTCDate()}`;
+  return `${f(d)}~${f(e)}`;
+}
+function unifiedVars(academy, t, { note, stats, course, weekStart }) {
+  const solvedRate = stats.questions ? Math.round((stats.solved / stats.questions) * 100) : 0;
+  const autoState = [course ? courseLine(course) : '', stats.questions ? `질문창 ${stats.questions}문제, 스스로 해결 ${solvedRate}%` : ''].filter(Boolean).join(' / ') || '반 진도에 맞춰 학습 중';
+  const autoAttitude = stats.questions ? `이번 주 ${stats.days}일 동안 막히는 문제를 꾸준히 물어보며 공부했어요.` : '수업에 성실히 참여했어요.';
+  const v = {
+    '#{학부모이름}': t.guardian_name || t.nickname,          // 예: "민준 어머니!"
+    '#{학생이름}': t.nickname,
+    '#{기간}': weekRange(weekStart),
+    '#{과목명}': (note?.subject || SUBJ_KO[t.subject] || '').trim() || '-',
+    '#{학습상태}': (note?.progress || '').trim() || autoState,
+    '#{수업태도}': (note?.attitude || '').trim() || autoAttitude,
+    '#{원장의견}': note ? note.final_text.trim() : toTemplateVars(academy, t, stats, course)['#{원장코멘트}'],
+  };
+  const preview = `[${academy.name} 주간 학습 리포트]\n안녕하세요, ${v['#{학부모이름}']} 어머니!\n우리 ${v['#{학생이름}']}이의 이번 주(${v['#{기간}']}) 학습 현황…\n과목: ${v['#{과목명}']}\n▫ 주간 진도 및 학습 상태: ${v['#{학습상태}']}\n▫ 수업 태도 및 특이사항: ${v['#{수업태도}']}\n✦ 종합 의견:\n${v['#{원장의견}']}`;
+  return { vars: v, preview };
+}
+
 // ---- 4. 학원 1곳 처리 ----
 // 학부모마다: ① 원장님이 승인한 이번 주 상담글이 있으면 상담글 발송
 //            ② 없으면 학원 설정(stats_fallback)에 따라 자동 통계 리포트 발송 또는 건너뜀
@@ -185,7 +215,12 @@ async function processAcademy(academy, weekStart) {
     const stats = await buildStats(academy.id, t.student_id, weekStart);
 
     let kind, templateId, vars, preview, buttons;
-    if (note) {
+    if (UNIFIED() && (note || academy.stats_fallback)) {
+      kind = note ? 'counsel' : 'stats';
+      templateId = UNIFIED();
+      const course = courseFor({ subject: t.subject, grade: t.course_grade, mode: t.course_mode, pin: t.course_pin });
+      ({ vars, preview } = unifiedVars(academy, t, { note, stats, course, weekStart }));
+    } else if (note) {
       kind = 'counsel';
       templateId = process.env.KAKAO_TEMPLATE_COUNSEL;
       let token = null;
@@ -250,4 +285,15 @@ async function runWeeklyReports({ force = false } = {}) {
   }
 }
 
-module.exports = { runWeeklyReports, toTemplateVars, renderPreview, counselTemplateVars, mondayOf, nowKST, buildStats };
+// 원장님 '내 폰으로 테스트 발송': DRY_RUN과 상관없이 실제로 1건 보냄 (원장님이 입력한 번호로만)
+async function sendTest({ phone, templateId, vars, preview }) {
+  if (!hasSolapi()) throw Object.assign(new Error('솔라피 키가 아직 없어요. 렌더 Environment에 SOLAPI_API_KEY, SOLAPI_API_SECRET, KAKAO_PF_ID를 넣어 주세요.'), { status: 400 });
+  if (!process.env.KAKAO_PF_ID) throw Object.assign(new Error('렌더 Environment에 KAKAO_PF_ID(카카오 채널 발신프로필 ID)를 넣어 주세요.'), { status: 400 });
+  if (!templateId) throw Object.assign(new Error('렌더 Environment에 KAKAO_TEMPLATE_REPORT(솔라피 템플릿 ID)를 넣어 주세요.'), { status: 400 });
+  const r = await sms().send({ to: phone, from: process.env.SENDER_PHONE,
+    kakaoOptions: { pfId: process.env.KAKAO_PF_ID, templateId, variables: vars, disableSms: false } });
+  console.log('[test-send]', phone.slice(0, 3) + '****' + phone.slice(-4), preview.split('\n')[0]);
+  return { messageId: r?.groupInfo?.groupId || null };
+}
+
+module.exports = { runWeeklyReports, unifiedVars, sendTest, UNIFIED, toTemplateVars, renderPreview, counselTemplateVars, mondayOf, nowKST, buildStats };

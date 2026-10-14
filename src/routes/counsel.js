@@ -205,4 +205,32 @@ r.post('/:studentId/unapprove', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// ---------- 원장님 휴대폰으로 테스트 발송 (실제 알림톡 1건, 학부모님께는 안 감) ----------
+const testLimiter = require('express-rate-limit').rateLimit({ windowMs: 60 * 60e3, limit: 10 });
+r.post('/:studentId/test-send', testLimiter, async (req, res, next) => {
+  try {
+    if (!UUID.test(req.params.studentId)) throw Object.assign(new Error('없는 학생이에요'), { status: 404 });
+    const phone = String(req.body?.phone || '').replace(/\D/g, '');
+    if (!/^01\d{8,9}$/.test(phone)) throw Object.assign(new Error('받을 휴대폰 번호를 확인해 주세요'), { status: 400 });
+    const { unifiedVars, sendTest, UNIFIED, buildStats } = require('../jobs/weeklyReport');
+    const out = await T(req, async (c) => {
+      const academy = await loadAcademy(c, req.user.aid);
+      const week = targetWeek(academy, req.body?.week);
+      const t = (await c.query(`SELECT s.id AS student_id, s.nickname, cl.subject, cl.course_grade, cl.course_mode, cl.course_pin
+                                  FROM students s LEFT JOIN classes cl ON cl.id=s.class_id WHERE s.id=$1`, [req.params.studentId])).rows[0];
+      if (!t) throw Object.assign(new Error('없는 학생이에요'), { status: 404 });
+      const n = (await c.query('SELECT * FROM counsel_notes WHERE student_id=$1 AND week_start=$2', [t.student_id, week])).rows[0];
+      const note = n && String(n.final_text || '').trim() ? n : null;
+      const stats = await buildStats(req.user.aid, t.student_id, week, c);
+      const course = courseFor({ subject: t.subject, grade: t.course_grade, mode: t.course_mode, pin: t.course_pin });
+      return { ...unifiedVars(academy, t, { note, stats, course, weekStart: week }), kind: note ? 'counsel' : 'stats' };
+    });
+    const r2 = await sendTest({ phone, templateId: UNIFIED(), vars: out.vars, preview: out.preview });
+    res.json({ ok: true, kind: out.kind, preview: out.preview, messageId: r2.messageId });
+  } catch (e) {
+    if (e.status) return next(e);
+    next(Object.assign(new Error(`솔라피 발송 실패: ${String(e.message).slice(0, 160)}`), { status: 400 }));
+  }
+});
+
 module.exports = { router: r, targetWeek, sendAtLabel };
