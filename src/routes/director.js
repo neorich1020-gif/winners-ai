@@ -58,6 +58,9 @@ r.get('/persona', auth, async (req, res) => {
 });
 r.put('/persona', auth, ownerOnly, async (req, res) => {
   const b = req.body || {};
+  // 발송 시각·요일은 DB에 넣기 전에 형식 확인 (잘못된 값 1건에 서버가 꺼졌던 원인)
+  if (b.report_time != null && b.report_time !== '' && !/^([01]\d|2[0-3]):[0-5]\d(:00)?$/.test(String(b.report_time))) throw bad('발송 시각은 18:00처럼 적어 주세요');
+  if (b.report_weekday != null && !(Number.isInteger(Number(b.report_weekday)) && Number(b.report_weekday) >= 0 && Number(b.report_weekday) <= 6)) throw bad('발송 요일을 다시 골라 주세요');
   await T(req, (c) => c.query(
     `UPDATE academies SET persona_name=$2, persona_style=$3, persona_examples=$4,
        report_weekday=$5, report_time=$6, report_enabled=$7,

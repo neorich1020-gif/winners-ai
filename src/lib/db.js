@@ -22,7 +22,12 @@ function sslFor(url) {
   return process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false;
 }
 const DB_URL = process.env.DATABASE_URL;
-const pool = new Pool({ connectionString: DB_URL, ssl: sslFor(DB_URL) });
+// 연결 수: 기본 10개(PG_POOL_MAX로 조정). 연결을 15초 넘게 못 받으면 무한정 기다리지 않고 오류로 안내.
+// 한 연결에서 오래 멈춘 쿼리는 20초에 끊는다(statement_timeout). AI 응답은 연결 밖에서 기다린다(tutor·feedback).
+const pool = new Pool({ connectionString: DB_URL, ssl: sslFor(DB_URL), max: Number(process.env.PG_POOL_MAX || 10),
+  connectionTimeoutMillis: Number(process.env.PG_CONNECT_TIMEOUT_MS || 15000), statement_timeout: 20000,
+  idle_in_transaction_session_timeout: 180000 }); // 상담글 생성(AI 2~3회)은 아직 연결 안에서 기다리므로 3분 여유
+pool.on('error', (e) => console.error('[db] idle client error', e.message)); // 끊긴 유휴 연결 때문에 서버가 꺼지지 않게
 let batchPool;
 if (process.env.DATABASE_URL_BATCH) {
   batchPool = new Pool({ connectionString: process.env.DATABASE_URL_BATCH, ssl: sslFor(process.env.DATABASE_URL_BATCH), max: 3 });
@@ -30,6 +35,7 @@ if (process.env.DATABASE_URL_BATCH) {
   batchPool = new Pool({ connectionString: DB_URL, ssl: sslFor(DB_URL), max: 3 });
   batchPool.on('connect', (c) => c.query("SET app.bypass_rls = 'on'").catch(() => {}));
 }
+batchPool.on('error', (e) => console.error('[db] batch idle client error', e.message));
 
 async function withTenant(academyId, fn) {
   const client = await pool.connect();
@@ -40,7 +46,7 @@ async function withTenant(academyId, fn) {
     await client.query('COMMIT');
     return out;
   } catch (e) {
-    await client.query('ROLLBACK');
+    await client.query('ROLLBACK').catch(() => {}); // 연결이 끊긴 경우에도 원래 오류를 그대로 전달
     throw e;
   } finally {
     client.release();

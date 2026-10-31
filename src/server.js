@@ -1,4 +1,5 @@
 // 앱 진입점: 웹 서버 + PWA + 스케줄러(주간 알림톡, 월 자동결제, 대화·사진 자동 파기)
+require('./lib/asyncErrors'); // async 라우트 오류 안전망 (라우트보다 먼저)
 const express = require('express');
 const helmet = require('helmet');
 const cookieParser = require('cookie-parser');
@@ -70,7 +71,7 @@ app.get('/s/:token/manifest.webmanifest', async (req, res, next) => {
     res.type('application/manifest+json').set('Cache-Control', 'no-cache').send(JSON.stringify({
       id: start, name: `${row.academy_name} ${row.persona_name}`, short_name: row.persona_name.slice(0, 12),
       description: `${row.class_name} 질문창`, start_url: start, scope: start, display: 'standalone', orientation: 'portrait',
-      lang: 'ko', background_color: '#FAF8F5', theme_color: '#4F5BD5',
+      lang: 'ko', background_color: '#F7F7FC', theme_color: '#7456E8',
       icons: [
         { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
         { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' },
@@ -109,6 +110,20 @@ app.use((err, req, res, _next) => {
       return res.status(503).json({ error: why });
     }
     return res.status(503).json({ error: 'AI 선생님 연결이 잠깐 안 돼요. 잠시 후 다시 보내 줘!' });
+  }
+  // AI 응답이 시간제한(기본 25초)을 넘김 → 서버는 그대로, 학생에게는 다시 보내기 안내
+  if (/APIConnectionTimeout|APIConnectionError|AbortError/.test(String(err.name || err.constructor?.name || ''))) {
+    return res.status(503).json({ error: req.path.startsWith('/api/director')
+      ? 'AI 응답이 늦어요. 1~2분 뒤 다시 눌러 주세요.'
+      : 'AI 선생님 답이 늦어지고 있어. 잠깐 뒤에 다시 보내 줘!' });
+  }
+  // DB가 값 형식을 거부(잘못된 시각·숫자·날짜 등, PostgreSQL 22xxx) → 서버 오류가 아니라 입력 확인 안내
+  if (typeof err.code === 'string' && /^22/.test(err.code) && err.severity) {
+    return res.status(400).json({ error: '입력한 값을 확인해 주세요' });
+  }
+  // DB 연결이 모두 사용 중이라 기다리다 시간 초과 → 잠깐 뒤 다시
+  if (/timeout exceeded when trying to connect/i.test(String(err.message))) {
+    return res.status(503).json({ error: '사용자가 많아요. 잠시 후 다시 시도해 주세요' });
   }
   const status = err.status || 500;
   // code/extra: 화면이 상황별 안내(예: 사진 한도 소진 → 업그레이드 팝업)를 띄울 수 있게 함께 보냄

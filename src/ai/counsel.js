@@ -11,7 +11,9 @@ const { maskPII } = require('../lib/security');
 const { feedbackLine } = require('./feedback');
 const { courseLine } = require('../lib/curriculum');
 
-const anthropicClient = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+// 시간제한 45초(AI_REPORT_TIMEOUT_MS). 실패하면 아래에서 기본 모델로 한 번만 더 시도한다.
+const anthropicClient = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY,
+  timeout: Number(process.env.AI_REPORT_TIMEOUT_MS || 45000), maxRetries: 0 });
 // 리포트용 모델(AI_REPORT_MODEL)이 안 되면(모델 이름 오류·권한·과부하) 학생 질문창에서 쓰는 기본 모델로 한 번 더 시도
 const FALLBACK_MODEL = process.env.AI_MODEL || 'claude-haiku-4-5-20251001';
 const anthropic = { messages: { create: async (args) => {

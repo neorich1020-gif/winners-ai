@@ -16,13 +16,17 @@ const { toStudentText } = require('./prompt');
 const { getPlan, consumeFeedback } = require('../lib/plans');
 const { parseImage } = require('./tutor');
 
-const anthropicClient = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+// 시간제한: 첨삭은 손글씨 사진 + 상위 모델이라 45초(AI_FEEDBACK_TIMEOUT_MS). 재시도는 아래 '기본 모델로 한 번 더'가 맡는다.
+const anthropicClient = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY,
+  timeout: Number(process.env.AI_FEEDBACK_TIMEOUT_MS || 45000), maxRetries: 0 });
 // 리포트용 모델(AI_REPORT_MODEL)이 안 되면(모델 이름 오류·권한·과부하) 학생 질문창에서 쓰는 기본 모델로 한 번 더 시도
 const FALLBACK_MODEL = process.env.AI_MODEL || 'claude-haiku-4-5-20251001';
 const anthropic = { messages: { create: async (args) => {
   try { return await anthropicClient.messages.create(args); }
   catch (e) {
     if (args.model === FALLBACK_MODEL || e.status === 401 || /credit|balance|billing/i.test(String(e.message))) throw e;
+    // 시간 초과는 다른 모델로 다시 해도 학생이 너무 오래 기다리게 되므로 바로 안내
+    if (/Timeout/.test(String(e.name || e.constructor?.name || ''))) throw e;
     console.error('[ai] 모델', args.model, '실패 → 기본 모델로 재시도:', e.status, String(e.message).slice(0, 200));
     return anthropicClient.messages.create({ ...args, model: FALLBACK_MODEL });
   }
@@ -298,46 +302,65 @@ function summaryForMonitor(rv, message) {
 }
 
 // ---------------- 1) 처음 첨삭 ----------------
-async function createReview(client, ctx, { text, image, subject: requested }) {
+// AI를 기다리는 동안 DB 연결을 잡지 않도록: ① 한도 확인 → ② AI(연결 없음) → ③ 저장(한 트랜잭션)
+// db: (fn) => withTenant(학원, fn). 예전처럼 DB client를 넘겨도 동작한다.
+const asDb = (x) => (typeof x === 'function' ? x : (fn) => fn(x));
+async function preview(c, fn) { // 실제로 바꾸지 않고 '되는지'만 확인 (한도 검사용)
+  await c.query('SAVEPOINT fb_check');
+  try { return await fn(); } finally { await c.query('ROLLBACK TO SAVEPOINT fb_check'); }
+}
+
+async function createReview(dbOrClient, ctx, { text, image, subject: requested }) {
+  const db = asDb(dbOrClient);
   const subject = subjectFor(ctx.cls, requested);
   const { img, typed } = readInput({ text, image });
-  const usage = await consumeFeedback(client, ctx.academy.id, await getPlan(client, ctx.academy.plan_code));
   const label = subject === 'english' ? '영작 첨삭' : '풀이 첨삭';
+  // ① 이번 달 첨삭 한도 확인 (다 썼으면 AI를 부르지 않고 402)
+  const plan = await db(async (client) => {
+    const p = await getPlan(client, ctx.academy.plan_code);
+    await preview(client, () => consumeFeedback(client, ctx.academy.id, p));
+    return p;
+  });
 
-  const session = (await client.query(
-    `INSERT INTO question_sessions (academy_id, student_id, subject, topic, kind) VALUES ($1,$2,$3,$4,'feedback') RETURNING id`,
-    [ctx.academy.id, ctx.student.id, subject, label])).rows[0];
-  await saveStudentMsg(client, ctx, session.id, label, typed, img);
-
+  // ② AI (DB 연결 없음)
   const out = await callModel(firstPrompt(subject, ctx), TOOLS[`${subject}_first`],
     userContent(img, typed, subject === 'english' ? '학생이 쓴 영어 글' : '학생이 푼 수학 풀이'));
 
-  // 읽을 수 없음/주제 밖 → 오류로 돌려보내 트랜잭션 취소(횟수 차감도 취소)
+  // 읽을 수 없음/주제 밖 → 아무것도 저장하지 않고 안내 (횟수 차감도 없음)
   if (!out.readable) throw Object.assign(new Error('글씨가 잘 안 보여. 밝은 곳에서 글이 화면에 꽉 차게 다시 찍어 줄래?'), { status: 422, code: 'UNREADABLE' });
   if (out.off_topic) throw Object.assign(new Error(subject === 'english' ? '직접 쓴 영어 글을 올려 줘!' : '직접 푼 수학 풀이를 올려 줘!'), { status: 422, code: 'OFFTOPIC' });
 
-  if (out.safety_concern) {
-    await flagSafety(client, ctx, session.id, SAFETY_TEXT);
-    return { safety: true, reply: SAFETY_TEXT, sessionId: session.id, quota: usage };
-  }
+  // ③ 저장
+  return db(async (client) => {
+    const usage = await consumeFeedback(client, ctx.academy.id, plan);
+    const session = (await client.query(
+      `INSERT INTO question_sessions (academy_id, student_id, subject, topic, kind) VALUES ($1,$2,$3,$4,'feedback') RETURNING id`,
+      [ctx.academy.id, ctx.student.id, subject, label])).rows[0];
+    await saveStudentMsg(client, ctx, session.id, label, typed, img);
 
-  const items = cleanFirst(subject, out);
-  const stage = items.length === 0 ? 'perfect' : 'hinted';
-  const message = clip(out.message, 400) || (items.length ? '힌트를 보고 고쳐서 다시 써 볼래?' : '완벽해! 아주 잘했어.');
-  const rv = (await client.query(
-    `INSERT INTO feedback_reviews (academy_id, student_id, session_id, subject, stage, transcript, items, error_count, praise)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
-    [ctx.academy.id, ctx.student.id, session.id, subject, stage, maskPII(clip(out.transcript, MAX_TEXT)),
-     JSON.stringify(items), items.length, clip(out.praise, 200)])).rows[0];
-  await client.query(`INSERT INTO messages (academy_id, session_id, role, content, verdict) VALUES ($1,$2,'ai',$3,'check')`,
-    [ctx.academy.id, session.id, summaryForMonitor(rv, message)]);
-  if (stage === 'perfect') await client.query("UPDATE question_sessions SET status='solved', ended_at=now() WHERE id=$1", [session.id]);
-  return publicView(rv, { message, quota: usage, sessionId: session.id });
+    if (out.safety_concern) {
+      await flagSafety(client, ctx, session.id, SAFETY_TEXT);
+      return { safety: true, reply: SAFETY_TEXT, sessionId: session.id, quota: usage };
+    }
+
+    const items = cleanFirst(subject, out);
+    const stage = items.length === 0 ? 'perfect' : 'hinted';
+    const message = clip(out.message, 400) || (items.length ? '힌트를 보고 고쳐서 다시 써 볼래?' : '완벽해! 아주 잘했어.');
+    const rv = (await client.query(
+      `INSERT INTO feedback_reviews (academy_id, student_id, session_id, subject, stage, transcript, items, error_count, praise)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+      [ctx.academy.id, ctx.student.id, session.id, subject, stage, maskPII(clip(out.transcript, MAX_TEXT)),
+       JSON.stringify(items), items.length, clip(out.praise, 200)])).rows[0];
+    await client.query(`INSERT INTO messages (academy_id, session_id, role, content, verdict) VALUES ($1,$2,'ai',$3,'check')`,
+      [ctx.academy.id, session.id, summaryForMonitor(rv, message)]);
+    if (stage === 'perfect') await client.query("UPDATE question_sessions SET status='solved', ended_at=now() WHERE id=$1", [session.id]);
+    return publicView(rv, { message, quota: usage, sessionId: session.id });
+  });
 }
 
-async function loadReview(client, ctx, id) {
+async function loadReview(client, ctx, id, lock = true) {
   if (!/^[0-9a-f-]{36}$/i.test(String(id))) throw Object.assign(new Error('없는 첨삭이에요'), { status: 404 });
-  const rv = (await client.query('SELECT * FROM feedback_reviews WHERE id=$1 AND student_id=$2 FOR UPDATE', [id, ctx.student.id])).rows[0];
+  const rv = (await client.query(`SELECT * FROM feedback_reviews WHERE id=$1 AND student_id=$2${lock ? ' FOR UPDATE' : ''}`, [id, ctx.student.id])).rows[0];
   if (!rv) throw Object.assign(new Error('없는 첨삭이에요'), { status: 404 });
   return rv;
 }
@@ -355,17 +378,26 @@ async function saveReview(client, rv) {
 }
 
 // ---------------- 2) 고쳐 쓴 글/다시 푼 풀이 확인 ----------------
-async function retryReview(client, ctx, id, { text, image }) {
-  const rv = await loadReview(client, ctx, id);
-  if (rv.stage === 'perfect' || rv.stage === 'revealed' || rv.retries >= MAX_RETRIES) {
-    throw Object.assign(new Error('이 첨삭은 끝났어. 새 글이나 풀이로 다시 올려 줘!'), { status: 409 });
-  }
+async function retryReview(dbOrClient, ctx, id, { text, image }) {
+  const db = asDb(dbOrClient);
+  const ended = (rv) => rv.stage === 'perfect' || rv.stage === 'revealed' || rv.retries >= MAX_RETRIES;
   const { img, typed } = readInput({ text, image });
-  await saveStudentMsg(client, ctx, rv.session_id, '고쳐 쓰기', typed, img);
+  // ① 확인할 첨삭 읽기 (잠그지 않음)
+  const before = await db((client) => loadReview(client, ctx, id, false));
+  if (ended(before)) throw Object.assign(new Error('이 첨삭은 끝났어. 새 글이나 풀이로 다시 올려 줘!'), { status: 409 });
 
-  const out = await callModel(retryPrompt(rv.subject, ctx, rv), TOOLS[`${rv.subject}_retry`],
-    userContent(img, typed, rv.subject === 'english' ? '학생이 고쳐 쓴 글' : '학생이 다시 푼 풀이'));
+  // ② AI (DB 연결 없음)
+  const out = await callModel(retryPrompt(before.subject, ctx, before), TOOLS[`${before.subject}_retry`],
+    userContent(img, typed, before.subject === 'english' ? '학생이 고쳐 쓴 글' : '학생이 다시 푼 풀이'));
   if (!out.readable) throw Object.assign(new Error('글씨가 잘 안 보여. 다시 찍어 줄래?'), { status: 422, code: 'UNREADABLE' });
+
+  // ③ 저장: 다시 잠가서 읽고, 그사이 다른 확인이 먼저 끝났으면 중복 처리하지 않음
+  return db(async (client) => {
+  const rv = await loadReview(client, ctx, id);
+  if (ended(rv) || rv.retries !== before.retries) {
+    throw Object.assign(new Error('이 첨삭은 방금 확인했어. 화면을 새로 고쳐 줘!'), { status: 409 });
+  }
+  await saveStudentMsg(client, ctx, rv.session_id, '고쳐 쓰기', typed, img);
   if (out.safety_concern) {
     await flagSafety(client, ctx, rv.session_id, SAFETY_TEXT);
     return { safety: true, reply: SAFETY_TEXT };
@@ -403,6 +435,7 @@ async function retryReview(client, ctx, id, { text, image }) {
   await client.query(`INSERT INTO messages (academy_id, session_id, role, content, verdict) VALUES ($1,$2,'ai',$3,'check')`,
     [ctx.academy.id, rv.session_id, summaryForMonitor(saved, message)]);
   return publicView(saved, { message });
+  });
 }
 
 // ---------------- 3) 영어: "잘 모르겠어요" → 바로 공개 ----------------
