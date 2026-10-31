@@ -1,7 +1,7 @@
 // 실행 전 준비: PostgreSQL(127.0.0.1:54329, postgres/pw)에 db/schema.sql, db/functions.sql, db/roles.sql 적용 후
 //   node tests/integration.js            (계정 2개 방식)
 //   TEST_DB_URL=<단일 계정 주소> node tests/integration.js   (Render처럼 계정 1개 + node db/setup.js 후)
-// AI는 가짜 응답, 알림톡은 DRY_RUN — 실제 발송·과금 없음 · 통합 테스트 219개
+// AI는 가짜 응답, 알림톡은 DRY_RUN — 실제 발송·과금 없음 · 통합 테스트 225개
 // 주간 상담글 기능 통합 테스트: 실제 PostgreSQL + 실제 서버 + DRY_RUN 발송 (AI만 가짜 응답)
 const crypto = require('crypto');
 Object.assign(process.env, {
@@ -35,6 +35,12 @@ Module._load = function (req, ...rest) {
       }
       if (args.system.includes('1:1 학습 튜터')) {
         const last = JSON.stringify(args.messages.at(-1));
+        if (last.includes('BUTTON_NO_TAG')) {
+          return { content: [{ type: 'text', text: '[HINT]\n[TOPIC: 일차방정식]\n1단계 ▶ 3x = 12 의 양변을 3으로 나누면\n답: x = 4\n이제 이 풀이를 가리고 혼자 처음부터 다시 써 보자! 다 쓰면 오답노트 사진으로 인증해 줘 📸' }] };
+        }
+        if (last.includes('GIVEUP_HINT_TAG')) {
+          return { content: [{ type: 'text', text: '[HINT]\n[TOPIC: 일차방정식]\n정답은 x = 5 이야. 1단계 ▶ 양변에서 3을 빼고 2로 나누면 돼.\n이제 이 풀이를 가리고 혼자 처음부터 다시 써 보자! 다 쓰면 오답노트 사진으로 인증해 줘 📸' }] };
+        }
         if (last.includes('그래프 교점')) {
           return { content: [{ type: 'text', text: '[HINT]\n[TOPIC: 일차함수]\n값 표\nx: 0 → 1 → 2\ny: 3 → 5 → 7\n<<GRAPH>>{"title":"두 직선","functions":[{"expr":"2x+3","label":"y = 2x + 3"},{"expr":"-x+6"},{"expr":"require(\'fs\')"}],"points":[{"x":0,"y":3,"label":"(0, 3)"}],"x":[-4,5]}<<END_GRAPH>>' }] };
         }
@@ -70,7 +76,7 @@ function fakeFeedback(args) {
       { original: 'a apple', type: '관사', hint: '모음 소리 앞에서 관사를 다시 확인해 봐!', corrected: 'an apple', explain: 'apple은 모음 소리로 시작해서 an을 써.' }] };
   if (sys.includes('고쳐 쓴 글 확인')) return { ...base, message: '시제는 완벽하게 고쳤어!', results: [{ id: 1, fixed: /went/.test(txt), note: '좋아!' }, { id: 2, fixed: /an apple/.test(txt) }] };
   if (sys.includes('수학 풀이 첨삭')) return { ...base, transcript: '1줄 2x+3=7\n2줄 2x=10', all_correct: txt.includes('PERFECT'), praise: '식을 깔끔하게 세웠어!', message: '2번째 줄부터 다시 보자.',
-    items: txt.includes('PERFECT') ? [] : [{ line: '2번째 줄: 2x + 3 = 7 → 2x = 10', type: '부호 실수', hint: '정답은 x = 2 이야' }] };
+    items: txt.includes('PERFECT') ? [] : [{ line: '2번째 줄: 2x + 3 = 7 → 2x = 10', type: '부호 실수', hint: txt.includes('LATEXFB') ? '양변에서 $3$을 빼면 $\\frac{4}{2}$ 꼴이 돼. **부호** 확인!' : '정답은 x = 2 이야' }] };
   if (sys.includes('다시 푼 수학 풀이 확인')) return { ...base, all_correct: txt.includes('2x=4'), message: '거의 다 왔어!',
     results: [{ id: 1, fixed: false, hint2: '+3을 오른쪽으로 넘기면 부호가 어떻게 바뀌는지 생각해 봐!' }] };
   return base;
@@ -375,6 +381,9 @@ function client() {
   ok(r.body.canRetry === false && /수업 시간/.test(r.body.message), '2번 다시 풀어도 틀리면 "수업 시간에 같이 보자"로 마무리', r.body);
   r = await fm('POST', `/api/student/feedback/${mRv.id}/retry`, { text: '2x=4' });
   ok(r.status === 409, '끝난 첨삭에 더 보내면 거절', r);
+  r = await fm('POST', '/api/student/feedback', { text: '2x+3=7 2x=10 LATEXFB' });
+  const lh = r.body.items?.[0]?.hint || '';
+  ok(r.status === 200 && lh.includes('4/2') && !/[$\\*]/.test(lh), `첨삭 힌트도 수식·꾸밈 기호를 보통 글자로 ("${lh}")`, r.body);
   r = await fm('POST', '/api/student/feedback', { text: '2x+3=7 2x=4 x=2 PERFECT' });
   ok(r.body.stage === 'perfect' && r.body.items.length === 0 && r.body.canRetry === false, '다 맞으면 칭찬으로 끝', r.body);
   r = await fm('POST', '/api/student/feedback', { text: '', image: { mediaType: 'image/jpeg', base64: jpg } });
@@ -384,7 +393,7 @@ function client() {
   r = await fm('POST', '/api/student/feedback', { text: 'BLUR' });
   const used2 = (await admin.query('SELECT feedback_reviews FROM monthly_usage WHERE academy_id=$1', [A])).rows[0];
   ok(r.status === 422 && r.body.code === 'UNREADABLE' && used2.feedback_reviews === used1.feedback_reviews, `안 보이는 사진은 다시 찍기 안내 + 횟수 차감 안 함 (${used2.feedback_reviews}회)`, r);
-  ok(used1.feedback_reviews === 3, '첨삭 횟수는 사진 질문 횟수와 따로 셈', used1);
+  ok(used1.feedback_reviews === 4, '첨삭 횟수는 사진 질문 횟수와 따로 셈', used1);
   r = await fm('POST', '/api/student/feedback', { text: 'I go to school yesterday.', subject: 'english' });
   ok(r.status === 200 && r.body.subject === 'english', '수학 반 학생도 같은 화면에서 영어 영작 첨삭 가능', r.body);
   await admin.query('UPDATE monthly_usage SET feedback_reviews = feedback_reviews - 1 WHERE academy_id=$1', [A]);
@@ -491,6 +500,19 @@ function client() {
   const gm = (await admin.query("SELECT content FROM messages WHERE session_id=$1 AND role='ai' ORDER BY id DESC LIMIT 1", [r.body.sessionId])).rows[0].content;
   ok(gm.includes('📈 그래프 보여 줌: y = 2x + 3'), '대화 기록(원장님 화면)에 그래프 보여 준 것 표시');
   ok((prompts.at(-1) || '').includes('<<GRAPH>>') && (prompts.at(-1) || '').includes('좌표축·곡선·그래프·도형 모양은 글자로 그리지 않는다'), '프롬프트: 글자 그래프 금지 + 진짜 그래프 블록 안내');
+  // 버튼을 눌렀는데 AI가 [SOLUTION] 표시를 빠뜨려도 완성 풀이 그대로 + 기록
+  r = await he('POST', '/api/student/ask', { text: '3x=12 모르겠어요' });
+  const sidB = r.body.sessionId;
+  r = await he('POST', '/api/student/ask', { text: 'BUTTON_NO_TAG 해 봤는데 막혔어요. 완성 풀이를 보여 주세요', sessionId: sidB, wantSolution: true });
+  ok(r.body.solutionShown === true && r.body.reply.includes('답: x = 4') && !r.body.reply.includes('거의 다 왔어'), '📖 버튼: AI가 표시를 빠뜨려도 완성 풀이를 가리지 않음', r.body);
+  ok((await admin.query('SELECT solution_shown FROM question_sessions WHERE id=$1', [sidB])).rows[0].solution_shown === true, '📖 버튼으로 본 풀이도 "풀이 봄"으로 기록');
+  ok(prompts.at(-1).includes('방금 "📖 완성 풀이 보기" 버튼을 눌렀다'), '버튼을 누르면 튜터에게 완성 풀이를 바로 보이라고 지시');
+  r = await he('POST', '/api/student/ask', { text: '2x+3=13 모르겠어요' });
+  const sidG = r.body.sessionId;
+  r = await he('POST', '/api/student/ask', { text: 'GIVEUP_HINT_TAG 아 진짜 모르겠어', sessionId: sidG });
+  ok(r.body.reply.includes('x = 5') && r.body.solutionShown === true, '"모르겠어" 뒤 AI가 [HINT]로 잘못 표시해도 풀이를 막지 않고 기록', r.body);
+  r = await he('POST', '/api/student/ask', { text: 'GIVEUP_HINT_TAG 처음부터 모르겠어' });
+  ok(!r.body.reply.includes('x = 5') && r.body.solutionShown === false, '힌트를 받기 전 첫 질문에서는 여전히 답을 가림', r.body);
   // 📖 완성 풀이: 힌트를 받기 전에는 가리고, 힌트를 받은 뒤 막히면 바로 보여 줌
   prompts.length = 0;
   r = await he('POST', '/api/student/ask', { text: '그냥 완성 풀이 보여 주세요' });

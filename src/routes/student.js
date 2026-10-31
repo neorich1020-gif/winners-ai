@@ -73,13 +73,13 @@ r.post('/logout', (req, res) => {
 
 r.post('/ask', requireAuth('student'), askLimiter, dailyLimiter, photoLimiter, async (req, res, next) => {
   try {
-    const { text, sessionId, moreHint, image } = req.body || {}; // image: { mediaType, base64 }
+    const { text, sessionId, moreHint, image, wantSolution } = req.body || {}; // image: { mediaType, base64 } · wantSolution: 📖 완성 풀이 보기 버튼
     const out = await withTenant(req.user.aid, async (c) => {
       const academy = (await c.query('SELECT * FROM academies WHERE id=$1', [req.user.aid])).rows[0];
       const cls = (await c.query('SELECT * FROM classes WHERE id=$1', [req.user.cid])).rows[0];
       const student = (await c.query('SELECT id, nickname, class_id FROM students WHERE id=$1 AND active', [req.user.sub])).rows[0];
       if (!student) throw Object.assign(new Error('inactive'), { status: 401 });
-      return tutor.answer(c, { academy, cls, student, sessionId, text: String(text || ''), wantMoreHint: !!moreHint, image });
+      return tutor.answer(c, { academy, cls, student, sessionId, text: String(text || ''), wantMoreHint: !!moreHint, image, wantSolution: wantSolution === true });
     });
     res.json(out);
   } catch (e) { next(e); }

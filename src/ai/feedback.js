@@ -12,6 +12,7 @@
 // =====================================================================
 const Anthropic = require('@anthropic-ai/sdk');
 const { maskPII } = require('../lib/security');
+const { toStudentText } = require('./prompt');
 const { getPlan, consumeFeedback } = require('../lib/plans');
 const { parseImage } = require('./tutor');
 
@@ -227,18 +228,21 @@ function cleanFirst(subject, out) {
 }
 
 // 학생에게 보여 줄 모양 (영어 고친 표현은 공개 단계·못 고친 항목만)
+// 학생 휴대폰 화면은 수식(LaTeX)·마크다운을 그리지 못하므로 √3, 30°, ∠B 같은 보통 글자로 정리해서 보낸다 (튜터 답변과 같은 규칙)
+const tx = (v) => (typeof v === 'string' ? toStudentText(v) : v);
 function publicView(rv, extra = {}) {
   const revealed = rv.subject === 'english' && (rv.stage === 'revealed');
   const done = rv.stage === 'perfect' || rv.stage === 'revealed' || (rv.subject === 'math' && rv.retries >= MAX_RETRIES);
+  if (extra.message) extra = { ...extra, message: tx(extra.message) };
   return {
     id: rv.id,
     subject: rv.subject,
     stage: rv.stage,
-    praise: rv.praise,
+    praise: tx(rv.praise),
     items: rv.items.map((it) => ({
-      id: it.id, type: it.type, hint: it.hint, fixed: it.fixed ?? null,
-      ...(rv.subject === 'english' ? { original: it.original } : { line: it.line }),
-      ...(revealed && !it.fixed ? { corrected: it.corrected, explain: it.explain } : {}),
+      id: it.id, type: it.type, hint: tx(it.hint), fixed: it.fixed ?? null,
+      ...(rv.subject === 'english' ? { original: it.original } : { line: tx(it.line) }),
+      ...(revealed && !it.fixed ? { corrected: it.corrected, explain: tx(it.explain) } : {}),
     })),
     errorCount: rv.error_count,
     fixedCount: rv.fixed_count,

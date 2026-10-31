@@ -82,7 +82,7 @@ let pass = 0, fail = 0; const ok = (c, m) => { c ? pass++ : fail++; console.log(
   // ---- 📖 완성 풀이 보기 ----
   ok(!$('#show-sol').hidden, '힌트를 받은 뒤 "📖 완성 풀이 보기" 버튼이 나타남');
   $('#show-sol').click(); await new Promise(r=>setTimeout(r,80));
-  ok(calls.at(-1)[0] === '/api/student/ask' && calls.at(-1)[1].text.includes('완성 풀이') && calls.at(-1)[1].sessionId === 's9' && $('#chat').textContent.includes('답: x = 4'), '버튼 → 같은 문제의 완성 풀이 요청·표시');
+  ok(calls.at(-1)[0] === '/api/student/ask' && calls.at(-1)[1].text.includes('완성 풀이') && calls.at(-1)[1].wantSolution === true && calls.at(-1)[1].sessionId === 's9' && $('#chat').textContent.includes('답: x = 4'), '버튼 → 같은 문제의 완성 풀이 요청·표시');
   ok($('#show-sol').hidden, '완성 풀이를 본 뒤에는 버튼이 들어감');
   $('#new-q').click(); await tick();
   ok($('#show-sol').hidden, '새 문제에서는 힌트 전까지 버튼 숨김');

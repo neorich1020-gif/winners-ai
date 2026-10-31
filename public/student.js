@@ -394,7 +394,7 @@
     if (solution) add('me', '📖 완성 풀이 보여 줘');
     else if (moreHint) add('me', keyHint() ? '🙋 다시 쉽게 설명해 줘' : '💡 힌트 하나 더');
     else add('me', text, photo?.preview);
-    const body = { text: solution ? '해 봤는데 막혔어요. 완성 풀이를 보여 주세요' : moreHint ? (text || (keyHint() ? '조금 더 쉽게 다시 설명해 줘' : '힌트 하나 더 주세요')) : text, sessionId, moreHint };
+    const body = { text: solution ? '해 봤는데 막혔어요. 완성 풀이를 보여 주세요' : moreHint ? (text || (keyHint() ? '조금 더 쉽게 다시 설명해 줘' : '힌트 하나 더 주세요')) : text, sessionId, moreHint, ...(solution ? { wantSolution: true } : {}) };
     const sent = photo && !moreHint && !solution ? photo : null;
     if (sent) body.image = { mediaType: sent.mediaType, base64: sent.base64 };
     $('#text').value = ''; autoGrow(); $('#preview').hidden = true; if (sent) photo = null;

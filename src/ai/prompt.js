@@ -31,7 +31,7 @@ function directorLabel(name) {
 // ---------- 지도 방식 2: 멘트윈 핵심 힌트형 (원장님 설계) ----------
 // 3칸 매트릭스: ① 핵심 개념 퀴즈 ② 힌트 1 = 해결 흐름 3단계 + 모르는 개념 점검 질문 ③ 힌트 2 = 결정적 단서(비유·도식)
 // 완성된 계산 풀이는 주지 않는다. 학생이 흐름대로 풀어 내면 오답노트 인증 지시.
-function buildKeyHintPrompt({ academy, cls, student, materials, hasImage, hintLevel = 0, solutionUnlocked = false }) {
+function buildKeyHintPrompt({ academy, cls, student, materials, hasImage, hintLevel = 0, solutionUnlocked = false, forceSolution = false }) {
   const examples = (academy.persona_examples || '').trim();
   const mats = materials.map((m) => `- [${m.title}] 범위: ${m.scope_note}\n  핵심: ${m.content.slice(0, 1500)}`).join('\n');
   const dir = '선생님';   // 원장님 요청: 특정 원장님 이름 대신 "선생님"
@@ -106,7 +106,10 @@ ${examples ? `원장님이 실제로 쓰는 말(어투만 참고):\n${examples}`
    - 정답(빈칸 답, 고른 번호)과 문장 전체 해석은 바로 주지 않는다.
 3. 학생이 답을 말하면 맞는지 알려 주고, 틀렸으면 흐름의 몇 단계를 다시 보면 되는지만 짚는다.
 
-${solutionUnlocked ? `# 완성 풀이 공개 (이 문제는 지금 공개 가능)
+${forceSolution ? `# ⚠️ 이번 답변: 학생이 방금 "📖 완성 풀이 보기" 버튼을 눌렀다
+반드시 [SOLUTION] 태그로 이 문제의 완성 풀이를 바로 보여 준다. 다시 힌트나 질문으로 돌리지 않는다.
+
+` : ''}${solutionUnlocked ? `# 완성 풀이 공개 (이 문제는 지금 공개 가능)
 이 문제는 이미 힌트를 받았다. 학생이 완성 풀이·답을 보여 달라고 하거나, "모르겠어", "어려워", "포기할래"처럼 막혔다고 하면
 망설이거나 한 번 더 버티게 하지 말고 바로 [SOLUTION] 태그로 완성 풀이를 보여 준다. 답답해서 포기하지 않게 하는 것이 핵심이다.
 - 수학: 단계별(1단계 ▶ …)로 식을 한 줄씩 쓰고, 중간중간 그 식을 쓰는 이유를 "💡 개념: …" 한 줄로 짧게 붙인 뒤 마지막에 답을 쓴다.

@@ -28,7 +28,7 @@ function parseImage(image) {
   return { mediaType, buf };
 }
 
-async function answer(client, { academy, cls, student, sessionId, text, wantMoreHint, image }) {
+async function answer(client, { academy, cls, student, sessionId, text, wantMoreHint, image, wantSolution = false }) {
   const img = parseImage(image);
   // 사진 질문 횟수 차감 (라이트: 학원 전체 월 100회). 다 쓰면 402 + PHOTO_QUOTA → 학생 화면에 업그레이드 안내 팝업
   let photo = null;
@@ -106,11 +106,15 @@ async function answer(client, { academy, cls, student, sessionId, text, wantMore
   const hintsSoFar = (await client.query(
     "SELECT count(*)::int AS n FROM messages WHERE session_id=$1 AND role='ai' AND verdict IN ('hint','hint_leak_blocked')", [session.id])).rows[0].n;
   const solutionUnlocked = keyHint && hintsSoFar >= 1;
+  // 학생이 막혔다는 신호: 📖 완성 풀이 보기 버튼(확실) 또는 "모르겠어/포기/풀이 보여 줘" 같은 말
+  const GIVE_UP = /(모르겠|몰라|포기|어려워|못\s*풀|막혔|(완성\s*)?풀이\s*(좀\s*)?(보여|알려|줘)|답\s*(좀\s*)?(보여|알려))/;
+  const forceSolution = solutionUnlocked && wantSolution;            // 버튼: AI 표시와 상관없이 완성 풀이로 처리
+  const stuck = solutionUnlocked && (wantSolution || GIVE_UP.test(clean));
   const res = await anthropic.messages.create({
     model: MODEL,
     max_tokens: keyHint ? 1200 : 600,   // 핵심 힌트형은 3칸(퀴즈·흐름·단서) + 요약을 쓰므로 길게
     temperature: 0.4,
-    system: buildSystemPrompt({ academy, cls, student, materials, hintLevel: session.hint_level, hasImage: !!lastImg, solutionUnlocked }),
+    system: buildSystemPrompt({ academy, cls, student, materials, hintLevel: session.hint_level, hasImage: !!lastImg, solutionUnlocked, forceSolution }),
     messages: msgs,
   });
   const raw = res.content.filter((b) => b.type === 'text').map((b) => b.text).join('');
@@ -120,9 +124,14 @@ async function answer(client, { academy, cls, student, sessionId, text, wantMore
   // [SOLUTION](완성 풀이)은 공개 조건을 만족할 때만 그대로 보내고, 아니면 힌트로 보고 정답 노출을 가린다
   let parsed = parseModelOutput(raw);
   if (parsed.verdict === 'solution' && !solutionUnlocked) parsed = { ...parsed, verdict: 'hint' };
+  // 버튼을 눌렀으면 AI가 [SOLUTION] 표시를 빠뜨려도 완성 풀이로 본다 (안전 신호는 그대로 우선)
+  if (forceSolution && parsed.verdict !== 'safety' && parsed.verdict !== 'refuse_offtopic') parsed = { ...parsed, verdict: 'solution' };
+  // "모르겠어" 등으로 막혔다고 한 뒤 AI가 [HINT]로 표시했지만 실제로 풀이·답을 준 경우도 막지 않는다 (힌트를 이미 받은 문제라 공개 허용)
+  if (stuck && parsed.verdict === 'hint' && /가리고[\s\S]{0,30}다시\s*써/.test(parsed.text)) parsed = { ...parsed, verdict: 'solution' };
   if (parsed.verdict === 'solution') parsed = { ...parsed, hint2: null };
   const ownWork = !!img || /[0-9=]/.test(clean || '');
-  const out = parsed.verdict === 'solution' || (keyHint && parsed.verdict === 'check' && ownWork) ? parsed : postCheck(parsed, keyHint ? 0 : session.hint_level);
+  const out = parsed.verdict === 'solution' || (stuck && parsed.verdict === 'hint') || (keyHint && parsed.verdict === 'check' && ownWork)
+    ? parsed : postCheck(parsed, keyHint ? 0 : session.hint_level);
   if (out.verdict === 'solution') await client.query('UPDATE question_sessions SET solution_shown=true WHERE id=$1', [session.id]);
 
   const saved = (await client.query(
