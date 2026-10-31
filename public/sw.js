@@ -1,6 +1,6 @@
 // 서비스 워커: 홈 화면 앱(PWA) 설치 조건 + 빠른 화면 로딩 + 인터넷이 끊겼을 때 안내
 // 원칙: 질문·대화·상담글 같은 개인 데이터(/api, /letter)는 절대 캐시하지 않는다.
-const VERSION = 'wai-v3';
+const VERSION = 'wai-v4'; // 2026-10-31 B안 화면: 새 버전이면 예전 캐시 삭제
 const SHELL = ['/student.js', '/offline.html', '/icons/icon-192.png', '/icons/icon-512.png', '/icons/apple-touch-icon.png'];
 
 self.addEventListener('install', (e) => {
@@ -23,8 +23,15 @@ self.addEventListener('fetch', (e) => {
     e.respondWith(fetch(req).catch(() => caches.match('/offline.html')));
     return;
   }
-  // 아이콘·스크립트: 캐시 먼저 보여 주고 뒤에서 새로 받아 둠
-  if (url.pathname.startsWith('/icons/') || url.pathname === '/student.js') {
+  // 화면 스크립트: 항상 최신 먼저(화면 HTML과 짝이 맞게) → 인터넷이 끊겼을 때만 캐시
+  if (url.pathname === '/student.js') {
+    e.respondWith(caches.open(VERSION).then((c) => fetch(req)
+      .then((res) => { if (res.ok) c.put(req, res.clone()); return res; })
+      .catch(() => c.match(req))));
+    return;
+  }
+  // 아이콘: 캐시 먼저 보여 주고 뒤에서 새로 받아 둠
+  if (url.pathname.startsWith('/icons/')) {
     e.respondWith(caches.open(VERSION).then(async (c) => {
       const hit = await c.match(req);
       const net = fetch(req).then((res) => { if (res.ok) c.put(req, res.clone()); return res; }).catch(() => hit);

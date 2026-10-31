@@ -43,7 +43,12 @@ let pass = 0, fail = 0; const ok = (c, m) => { c ? pass++ : fail++; console.log(
   $('#code').value = '03'; $('#pin').value = '9999'; $('#login-btn').click(); await tick();
   ok($('#login-err').textContent.includes('확인해 주세요'), '틀린 PIN 안내');
   $('#pin').value = '1111'; $('#login-btn').click(); await tick();
-  ok($('#login').hidden && !$('#chat').hidden && $('#chat').textContent.includes('민준'), '로그인 → 질문창');
+  // B안 리디자인: 로그인 → 홈(오늘의 미션·숙제·AI 질문) → 'AI에게 질문하기' 한 번 → 질문창
+  ok($('#login').hidden && !$('#home').hidden && $('#chat').hidden && $('#hello-name').textContent.includes('민준'), '로그인 → 홈 화면 (인사·오늘의 미션)');
+  ok(!$('#go-ask').hidden && $('#go-ask').className.includes('main') && $('#go-hw').hidden && $('#hw-title').textContent.includes('곧 열려요'), '홈: 숙제 기능 없으면 "곧 열려요" + AI 질문이 가장 큰 버튼');
+  ok($('#tab-notes').hidden && $('#preview-ribbon').hidden, '실제 화면에는 시안(오답노트 탭·미리보기 띠) 안 보임');
+  $('#go-ask').click(); await tick();
+  ok($('#login').hidden && !$('#chat').hidden && $('#home').hidden && $('#chat').textContent.includes('민준'), '로그인 → 질문창');
   ok($('#send').disabled, '빈 입력이면 전송 버튼 비활성');
   ok($('#cam-badge').textContent === '1' && !$('#cam-badge').hidden, '라이트: 카메라 버튼에 이번 달 남은 사진 횟수(1)');
   ok($('#chat .row.ai svg, #chat .row.ai .avatar') !== null, 'AI 말풍선 왼쪽 아바타');

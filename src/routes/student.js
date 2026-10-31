@@ -10,8 +10,14 @@ const { getPlan, photoUsage, feedbackUsage } = require('../lib/plans');
 
 const r = express.Router();
 
-// PIN 무차별 대입 방지
-const loginLimiter = rateLimit({ windowMs: 15 * 60e3, limit: 10 });
+// PIN 무차별 대입 방지: 학생(반 QR + 출석번호)마다 15분에 10번.
+// 예전에는 IP 기준이라 학원 와이파이 하나로 학생 11명째부터 로그인이 막혔다(2026-10-31 진단 실험 3).
+// IP 기준은 여러 학생 번호를 한꺼번에 찔러 보는 경우만 막도록 넉넉하게(15분 300번) 따로 둔다.
+const loginLimiter = rateLimit({ windowMs: 15 * 60e3, limit: Number(process.env.LOGIN_PER_STUDENT || 10), skipSuccessfulRequests: true, // 틀린 시도만 센다
+  keyGenerator: (req) => `stu:${String(req.body?.token || '').slice(0, 64)}:${String(req.body?.code || '').slice(0, 20)}`,
+  message: { error: '비밀번호를 여러 번 틀렸어요. 15분 뒤에 다시 해 보거나 선생님께 말해 주세요.' } });
+const loginIpLimiter = rateLimit({ windowMs: 15 * 60e3, limit: Number(process.env.LOGIN_PER_IP || 300),
+  message: { error: '잠시 후 다시 시도해 주세요' } });
 // 질문 남용 방지: 학생 1명당 분당 6회, 하루 150회 (비용 상한)
 const askLimiter = rateLimit({ windowMs: 60e3, limit: Number(process.env.ASK_PER_MINUTE || 6), keyGenerator: (req) => req.user.sub });
 const dailyLimiter = rateLimit({ windowMs: 24 * 3600e3, limit: 150, keyGenerator: (req) => req.user.sub });
@@ -33,7 +39,7 @@ r.get('/class/:token', async (req, res) => {
   res.json({ className: row.class_name, academyName: row.academy_name, personaName: row.persona_name });
 });
 
-r.post('/login', loginLimiter, async (req, res) => {
+r.post('/login', loginIpLimiter, loginLimiter, async (req, res) => {
   const { token, code, pin } = req.body || {};
   const cls = (await pool.query('SELECT * FROM resolve_class($1)', [token])).rows[0];
   if (!cls || !cls.plan_ok) return res.status(401).json({ error: '번호나 비밀번호를 확인해 주세요' });
@@ -58,7 +64,12 @@ r.get('/me', requireAuth('student'), async (req, res, next) => {
       const photo = await photoUsage(c, req.user.aid, plan); // 라이트면 이번 달 남은 사진 질문 수
       const fb = await feedbackUsage(c, req.user.aid, plan);  // 라이트면 이번 달 남은 첨삭 수
       const fbSubject = ['english', 'math'].includes(st.subject) ? st.subject : 'english'; // 처음 선택값 (화면에서 영어/수학 바꿀 수 있음)
-      return { nickname: st.nickname, classToken: st.qr_token, photo, feedback: { ...fb, subject: fbSubject },
+      // 홈 '오늘의 미션'용: 오늘(한국 시간) 새로 물어본 문제 수 · 스스로 해결한 문제 수 (읽기만)
+      const t = (await c.query(
+        `SELECT count(*)::int AS asked, count(*) FILTER (WHERE status='solved')::int AS solved FROM question_sessions
+          WHERE student_id=$1 AND kind='question' AND started_at >= (date_trunc('day', now() AT TIME ZONE 'Asia/Seoul') AT TIME ZONE 'Asia/Seoul')`,
+        [req.user.sub])).rows[0];
+      return { nickname: st.nickname, classToken: st.qr_token, photo, feedback: { ...fb, subject: fbSubject }, today: { asked: t.asked, solved: t.solved },
         teachingMode: st.teaching_mode === 'key_hint' ? 'key_hint' : 'hint_ladder' };
     });
     if (!out) return res.status(401).json({ error: '다시 로그인해 주세요' });
@@ -74,14 +85,10 @@ r.post('/logout', (req, res) => {
 r.post('/ask', requireAuth('student'), askLimiter, dailyLimiter, photoLimiter, async (req, res, next) => {
   try {
     const { text, sessionId, moreHint, image, wantSolution } = req.body || {}; // image: { mediaType, base64 } · wantSolution: 📖 완성 풀이 보기 버튼
-    const out = await withTenant(req.user.aid, async (c) => {
-      const academy = (await c.query('SELECT * FROM academies WHERE id=$1', [req.user.aid])).rows[0];
-      const cls = (await c.query('SELECT * FROM classes WHERE id=$1', [req.user.cid])).rows[0];
-      const student = (await c.query('SELECT id, nickname, class_id FROM students WHERE id=$1 AND active', [req.user.sub])).rows[0];
-      if (!student) throw Object.assign(new Error('inactive'), { status: 401 });
-      return tutor.answer(c, { academy, cls, student, sessionId, text: String(text || ''), wantMoreHint: !!moreHint, image, wantSolution: wantSolution === true });
-    });
-    res.json(out);
+    // AI를 기다리는 동안 DB 연결을 잡지 않도록: 정보 읽기 → (연결 반납) → AI → 저장 (tutor.answer 안에서 나눔)
+    const db = (fn) => withTenant(req.user.aid, fn);
+    const ctx = await db((c) => studentCtx(c, req));
+    res.json(await tutor.answer(db, { ...ctx, sessionId, text: String(text || ''), wantMoreHint: !!moreHint, image, wantSolution: wantSolution === true }));
   } catch (e) { next(e); }
 });
 
@@ -97,14 +104,16 @@ async function studentCtx(c, req) {
 r.post('/feedback', requireAuth('student'), feedbackBurst, feedbackLimiter, photoLimiter, async (req, res, next) => {
   try {
     const { text, image, subject } = req.body || {};
-    res.json(await withTenant(req.user.aid, async (c) => feedback.createReview(c, await studentCtx(c, req), { text, image, subject })));
+    const db = (fn) => withTenant(req.user.aid, fn);
+    res.json(await feedback.createReview(db, await db((c) => studentCtx(c, req)), { text, image, subject }));
   } catch (e) { next(e); }
 });
 // 고쳐 쓴 글 / 다시 푼 풀이 확인 (횟수 차감 없음, 최대 2번)
 r.post('/feedback/:id/retry', requireAuth('student'), feedbackBurst, feedbackLimiter, photoLimiter, async (req, res, next) => {
   try {
     const { text, image } = req.body || {};
-    res.json(await withTenant(req.user.aid, async (c) => feedback.retryReview(c, await studentCtx(c, req), req.params.id, { text, image })));
+    const db = (fn) => withTenant(req.user.aid, fn);
+    res.json(await feedback.retryReview(db, await db((c) => studentCtx(c, req)), req.params.id, { text, image }));
   } catch (e) { next(e); }
 });
 // 영어 "잘 모르겠어요" → 고친 표현·이유 바로 공개
