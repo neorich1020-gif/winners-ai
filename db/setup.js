@@ -80,6 +80,19 @@ async function main() {
           await c.query('COMMIT');
           console.log('[setup] 체험용 반·학생을 만들었습니다');
         }
+        // 영어 체험반이 생기기 전에 만든 DB에는 '-en' 반이 없어서 영어 체험 주소가 "없는 링크"로 나왔다 → 없으면 만든다
+        const mathDemo = (await c.query('SELECT id, academy_id FROM classes WHERE qr_token=$1', [token])).rows[0];
+        if (mathDemo && !(await c.query('SELECT 1 FROM classes WHERE qr_token=$1', [token + '-en'])).rows[0]) {
+          await c.query('BEGIN');
+          const en = (await c.query(
+            `INSERT INTO classes (academy_id, name, subject, grade_band, qr_token, course_grade) VALUES ($1,'영어 체험반','english','middle',$2,'중2') RETURNING id`,
+            [mathDemo.academy_id, token + '-en'])).rows[0];
+          await c.query(
+            `INSERT INTO students (academy_id, class_id, nickname, login_code, pin_hash, is_under_14) VALUES ($1,$2,'체험학생','1',$3,false)`,
+            [mathDemo.academy_id, en.id, await bcrypt.hash(pin, 10)]);
+          await c.query('COMMIT');
+          console.log('[setup] 영어 체험반을 추가했습니다');
+        }
         // (이전 버전에서 체험 학원 원장님 호칭을 '윤원장'으로 바꿨던 것을 되돌림 — 튜터는 이제 "선생님"이라고 부름)
         await c.query(
           `UPDATE academies SET director_name='원장'

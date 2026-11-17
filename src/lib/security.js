@@ -46,9 +46,10 @@ function maskPII(text) {
 function signStaff(staff) {
   return jwt.sign({ sub: staff.id, aid: staff.academy_id, role: staff.role }, JWT_SECRET, { audience: 'staff', expiresIn: '12h' });
 }
-function signStudent(st) {
+function signStudent(st, { demo = false } = {}) {
   // 홈 화면 앱(PWA)으로 매번 PIN을 치지 않도록 기본 7일 유지. 공용 기기는 '로그아웃' 버튼 사용
-  return jwt.sign({ sub: st.id, aid: st.academy_id, cid: st.class_id }, JWT_SECRET, { audience: 'student', expiresIn: `${STUDENT_HOURS}h` });
+  // demo: 여러 사람이 같이 쓰는 체험 계정 → 사용 횟수 제한을 사람(접속 위치)마다 따로 센다
+  return jwt.sign({ sub: st.id, aid: st.academy_id, cid: st.class_id, ...(demo ? { demo: true } : {}) }, JWT_SECRET, { audience: 'student', expiresIn: `${STUDENT_HOURS}h` });
 }
 function requireAuth(audience) {
   return (req, res, next) => {

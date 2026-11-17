@@ -13,22 +13,27 @@ const r = express.Router();
 // PIN 무차별 대입 방지: 학생(반 QR + 출석번호)마다 15분에 10번.
 // 예전에는 IP 기준이라 학원 와이파이 하나로 학생 11명째부터 로그인이 막혔다(2026-10-31 진단 실험 3).
 // IP 기준은 여러 학생 번호를 한꺼번에 찔러 보는 경우만 막도록 넉넉하게(15분 300번) 따로 둔다.
+// 체험 반(QR 토큰): 여러 사람이 출석번호 1번 하나를 같이 쓴다.
+// 그래서 체험 계정은 비밀번호 잠금·질문 횟수 제한을 '사람(접속 위치)마다' 따로 센다 → 한 사람 때문에 모두가 막히지 않게.
+const DEMO_TOKEN = process.env.DEMO_CLASS_TOKEN || 'winners-demo';
+const isDemoToken = (t) => t === DEMO_TOKEN || t === `${DEMO_TOKEN}-en`;
+const userKey = (req) => (req.user.demo ? `${req.user.sub}:${req.ip}` : req.user.sub);
 const loginLimiter = rateLimit({ windowMs: 15 * 60e3, limit: Number(process.env.LOGIN_PER_STUDENT || 10), skipSuccessfulRequests: true, // 틀린 시도만 센다
-  keyGenerator: (req) => `stu:${String(req.body?.token || '').slice(0, 64)}:${String(req.body?.code || '').slice(0, 20)}`,
+  keyGenerator: (req) => `stu:${String(req.body?.token || '').slice(0, 64)}:${String(req.body?.code || '').slice(0, 20)}${isDemoToken(req.body?.token) ? `:${req.ip}` : ''}`,
   message: { error: '비밀번호를 여러 번 틀렸어요. 15분 뒤에 다시 해 보거나 선생님께 말해 주세요.' } });
 const loginIpLimiter = rateLimit({ windowMs: 15 * 60e3, limit: Number(process.env.LOGIN_PER_IP || 300),
   message: { error: '잠시 후 다시 시도해 주세요' } });
 // 질문 남용 방지: 학생 1명당 분당 6회, 하루 150회 (비용 상한)
-const askLimiter = rateLimit({ windowMs: 60e3, limit: Number(process.env.ASK_PER_MINUTE || 6), keyGenerator: (req) => req.user.sub });
-const dailyLimiter = rateLimit({ windowMs: 24 * 3600e3, limit: 150, keyGenerator: (req) => req.user.sub });
+const askLimiter = rateLimit({ windowMs: 60e3, limit: Number(process.env.ASK_PER_MINUTE || 6), keyGenerator: userKey });
+const dailyLimiter = rateLimit({ windowMs: 24 * 3600e3, limit: 150, keyGenerator: userKey });
 // 사진 질문은 글보다 비용이 커서 따로 하루 30장 한도
-const photoLimiter = rateLimit({ windowMs: 24 * 3600e3, limit: 30, keyGenerator: (req) => req.user.sub,
+const photoLimiter = rateLimit({ windowMs: 24 * 3600e3, limit: 30, keyGenerator: userKey,
   skip: (req) => !req.body?.image, message: { error: '오늘 사진 질문은 다 썼어. 문제를 글로 적어서 물어봐 줘!' } });
 
 // 첨삭은 학생 1명당 하루 15회(새 첨삭 + 고쳐 쓰기 확인 합산), 분당 4회
-const feedbackLimiter = rateLimit({ windowMs: 24 * 3600e3, limit: Number(process.env.FEEDBACK_PER_DAY || 15), keyGenerator: (req) => req.user.sub,
+const feedbackLimiter = rateLimit({ windowMs: 24 * 3600e3, limit: Number(process.env.FEEDBACK_PER_DAY || 15), keyGenerator: userKey,
   message: { error: '오늘 첨삭은 여기까지! 내일 또 올려 줘.' } });
-const feedbackBurst = rateLimit({ windowMs: 60e3, limit: Number(process.env.FEEDBACK_PER_MINUTE || 4), keyGenerator: (req) => req.user.sub,
+const feedbackBurst = rateLimit({ windowMs: 60e3, limit: Number(process.env.FEEDBACK_PER_MINUTE || 4), keyGenerator: userKey,
   message: { error: '잠깐! 천천히 하나씩 올려 줘.' } });
 
 // QR 링크(/s/:token)가 처음 호출 → 반 이름, 학원 이름만 공개
@@ -48,7 +53,7 @@ r.post('/login', loginIpLimiter, loginLimiter, async (req, res) => {
     (await c.query('SELECT * FROM students WHERE class_id=$1 AND login_code=$2 AND active', [cls.class_id, String(code)])).rows[0]);
   if (!st || !(await bcrypt.compare(String(pin), st.pin_hash))) return res.status(401).json({ error: '번호나 비밀번호를 확인해 주세요' });
 
-  res.cookie('student_token', signStudent(st), cookieOpts(STUDENT_HOURS));
+  res.cookie('student_token', signStudent(st, { demo: isDemoToken(token) }), cookieOpts(STUDENT_HOURS));
   res.json({ nickname: st.nickname });
 });
 
