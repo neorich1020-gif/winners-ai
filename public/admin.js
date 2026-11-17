@@ -34,18 +34,23 @@
   $('#logout').onclick = async () => { await api('/logout', { body: {} }).catch(() => {}); showLogin(); };
 
   let me = null, classes = [], students = [];
+  const isTeacher = () => me?.role === 'teacher';
+  const OWNER_VIEWS = ['teachers', 'counsel', 'billing'];
   async function boot() {
     try { me = await api('/me'); } catch { return showLogin(); }
     $('#login').hidden = true; $('#app').hidden = false;
-    $('#acad-name').textContent = me.academy.name; $('#me-email').textContent = me.email;
+    $('#acad-name').textContent = me.academy.name; $('#me-email').textContent = me.name ? `${me.name} · ${me.email}` : me.email;
     document.title = `멘트윈 · ${me.academy.name}`;
-    go(location.hash.slice(1) || 'home');
+    // 선생님 계정: 담당 반 학생만 보이고, 원장 전용 메뉴(선생님·상담·요금·학원 설정)는 숨김
+    document.body.classList.toggle('is-teacher', isTeacher());
+    go(location.hash.slice(1) || (isTeacher() ? 'lesson' : 'home'));
+    if (me.mustChangePw) forcePasswordChange();
   }
 
   // ---------- 메뉴 ----------
-  const VIEWS = { home: loadHome, sessions: loadSessions, students: loadStudents, counsel: loadCounsel, feedback: loadFeedback, settings: loadSettings, billing: loadBilling };
+  const VIEWS = { lesson: loadLesson, teachers: loadTeachers, home: loadHome, sessions: loadSessions, students: loadStudents, counsel: loadCounsel, feedback: loadFeedback, settings: loadSettings, billing: loadBilling };
   function go(v) {
-    if (!VIEWS[v]) v = 'home';
+    if (!VIEWS[v] || (isTeacher() && OWNER_VIEWS.includes(v))) v = isTeacher() ? 'lesson' : 'home';
     $$('#nav button').forEach((b) => b.setAttribute('aria-current', String(b.dataset.view === v)));
     Object.keys(VIEWS).forEach((k) => ($('#v-' + k).hidden = k !== v));
     history.replaceState(null, '', '#' + v);
@@ -58,7 +63,7 @@
 
   // ---------- 오른쪽 창 ----------
   function openDrawer(html) { $('#drawer-panel').innerHTML = html; $('#drawer').hidden = false; $('#drawer-panel [data-close]')?.addEventListener('click', closeDrawer); return $('#drawer-panel'); }
-  function closeDrawer() { $('#drawer').hidden = true; $('#drawer-panel').innerHTML = ''; }
+  function closeDrawer() { if ($('#drawer').dataset.locked) return; $('#drawer').hidden = true; $('#drawer-panel').innerHTML = ''; }
   $('#drawer').addEventListener('click', (e) => { if (e.target.id === 'drawer') closeDrawer(); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('#drawer').hidden) closeDrawer(); });
   const top = (title) => `<div class="top"><h2>${esc(title)}</h2><button class="btn ghost small" data-close>닫기</button></div>`;
@@ -120,8 +125,10 @@
         <div class="row-head" style="margin:0"><h2>${esc(c.name)}</h2><span class="pill">${esc(GRADE[c.grade_band] || '')} ${esc(SUBJ[c.subject] || '')}</span><span class="sp"></span><span class="note">학생 ${c.students}명</span></div>
         <div class="url">${esc(c.qrUrl)}</div>
         <div class="note">📚 리포트 학습 코스: ${c.course ? esc(c.course.line) : '<span style="color:var(--warn)">설정 안 됨 (반 수정에서 학년 선택)</span>'}</div>
-        <div class="acts"><button class="btn small" data-copy="${esc(c.qrUrl)}">주소 복사</button><button class="btn ghost small" data-qr="${esc(c.id)}">QR 보기·저장</button><button class="btn ghost small" data-edit-class="${esc(c.id)}">반 수정</button></div>
-      </div>`).join('') : '<div class="card empty">아직 반이 없어요. "+ 반 만들기"로 시작해 주세요.</div>';
+        ${isTeacher() ? '' : `<div class="note">🧑‍🏫 담당 선생님: ${(c.teachers || []).length ? c.teachers.map((t) => esc(t.name)).join(', ') : '없음 (원장님)'}</div>`}
+        <div class="acts"><button class="btn small" data-copy="${esc(c.qrUrl)}">주소 복사</button><button class="btn ghost small" data-qr="${esc(c.id)}">QR 보기·저장</button>${isTeacher() ? '' : `<button class="btn ghost small" data-edit-class="${esc(c.id)}">반 수정</button>`}</div>
+      </div>`).join('') : `<div class="card empty">${isTeacher() ? '아직 담당 반이 없어요. 원장님께 담당 반 지정을 부탁해 주세요.' : '아직 반이 없어요. "+ 반 만들기"로 시작해 주세요.'}</div>`;
+    $('#add-class').hidden = isTeacher();
     $$('[data-copy]').forEach((b) => (b.onclick = async () => { try { await navigator.clipboard.writeText(b.dataset.copy); toast('주소를 복사했어요. 카톡에 붙여 넣으세요'); } catch { prompt('이 주소를 복사하세요', b.dataset.copy); } }));
     $$('[data-qr]').forEach((b) => (b.onclick = () => {
       const c = classes.find((x) => x.id === b.dataset.qr);
@@ -207,7 +214,7 @@
       <label class="f">학부모 휴대폰 ${s?.guardianPhone ? `(지금: ${esc(s.guardianPhone)} · 바꿀 때만 입력)` : '(금요일 상담 알림톡 받을 번호)'}<input id="sf-phone" inputmode="tel" maxlength="13" placeholder="010-0000-0000"></label>
       <label class="check"><input type="checkbox" id="sf-consent"> 학부모님 개인정보·리포트 수신 동의서를 확인했어요 ${s?.report_ok ? '(이미 동의됨)' : ''}</label>
       <button class="btn" type="submit">${s ? '저장' : '학생 등록'}</button><p class="msg" id="sf-msg"></p>
-      ${s ? '<button class="btn danger" type="button" id="sf-out">퇴원 처리</button><p class="note">퇴원 처리하면 질문방에 들어올 수 없고, 학생 수(요금제 정원)에서 빠져요.</p>' : ''}
+      ${s && !isTeacher() ? '<button class="btn danger" type="button" id="sf-out">퇴원 처리</button><p class="note">퇴원 처리하면 질문방에 들어올 수 없고, 학생 수(요금제 정원)에서 빠져요.</p>' : ''}
     </form>`);
     $('#sf', p).onsubmit = async (e) => {
       e.preventDefault();
@@ -357,6 +364,16 @@
   // ---------- 설정 ----------
   let persona = null;
   async function loadSettings() {
+    if (isTeacher()) { // 선생님: 비밀번호 바꾸기 + 담당 반 교재만
+      const [mats, cls] = await Promise.all([api('/materials'), api('/classes')]);
+      classes = cls;
+      const mine = new Set(cls.map((c) => c.id));
+      $('#m-class').innerHTML = cls.map((c) => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
+      const list = mats.filter((m) => !m.class_id || mine.has(m.class_id));
+      $('#mat-list').innerHTML = list.length ? list.map((m) => `<div class="card" style="padding:12px;margin-top:8px;box-shadow:none"><div class="row-head" style="margin:0"><b>${esc(m.title)}</b><span class="pill">${esc(m.class_name || '모든 반')}</span><span class="sp"></span>${m.class_id ? `<button class="btn ghost small" data-mat-del="${esc(m.id)}">내리기</button>` : ''}</div><div class="note">${esc(m.scope_note)}</div></div>`).join('') : '<p class="note">등록된 교재가 없어요</p>';
+      $$('[data-mat-del]').forEach((b) => (b.onclick = async () => { try { await api(`/materials/${b.dataset.matDel}`, { method: 'DELETE' }); toast('교재를 내렸어요'); loadSettings(); } catch (e) { toast(e.message); } }));
+      return;
+    }
     const [p, mats, cls] = await Promise.all([api('/persona'), api('/materials'), api('/classes')]);
     persona = p; classes = cls;
     $$('#mode-form input[name=mode]').forEach((r) => (r.checked = r.value === (p.teaching_mode || 'hint_ladder')));
@@ -396,7 +413,7 @@
   };
   $('#pw-form').onsubmit = async (e) => {
     e.preventDefault();
-    try { await api('/password', { method: 'PUT', body: { current: $('#pw-cur').value, next: $('#pw-new').value } }); $('#pw-cur').value = $('#pw-new').value = ''; msg('#pw-msg', '비밀번호를 바꿨어요', true); }
+    try { await api('/password', { method: 'PUT', body: { current: $('#pw-cur').value, next: $('#pw-new').value } }); $('#pw-cur').value = $('#pw-new').value = ''; msg('#pw-msg', '비밀번호를 바꿨어요', true); if (me) me.mustChangePw = false; }
     catch (err) { msg('#pw-msg', err.message); }
   };
 
@@ -425,6 +442,121 @@
       catch (err) { $('#bl-msg').textContent = err.message; $('#bl-msg').className = 'msg err'; }
     }));
   }
+
+  // ---------- 처음 로그인: 임시 비밀번호 바꾸기 ----------
+  function forcePasswordChange() {
+    const p = openDrawer(`<div class="top"><h2>비밀번호를 새로 정해 주세요</h2></div>
+      <p class="note">원장님이 만든 임시 비밀번호로 들어오셨어요. 본인만 아는 비밀번호로 바꿔야 계속 쓸 수 있어요.</p>
+      <form class="form" id="fp">
+        <label class="f">임시 비밀번호<input id="fp-cur" type="password" autocomplete="current-password" required></label>
+        <label class="f">새 비밀번호 (8자 이상)<input id="fp-new" type="password" autocomplete="new-password" minlength="8" required></label>
+        <button class="btn" type="submit">바꾸고 시작하기</button><p class="msg" id="fp-msg"></p></form>`);
+    $('#drawer').dataset.locked = '1';
+    $('#fp', p).onsubmit = async (e) => {
+      e.preventDefault();
+      try {
+        await api('/password', { method: 'PUT', body: { current: $('#fp-cur', p).value, next: $('#fp-new', p).value } });
+        me.mustChangePw = false; delete $('#drawer').dataset.locked; closeDrawer(); toast('비밀번호를 바꿨어요');
+      } catch (err) { msg('#fp-msg', err.message); }
+    };
+  }
+
+  // ---------- 수업 중인 반: 반을 고르면 그 반 학생의 오늘 학습 상황 ----------
+  const LS_KEY = 'mw-lesson-class';
+  const getLS = () => { try { return localStorage.getItem(LS_KEY); } catch { return null; } };
+  const setLS = (v) => { try { localStorage.setItem(LS_KEY, v); } catch { /* 저장 못 해도 동작 */ } };
+  const ago = (t) => { if (!t) return ''; const m = Math.round((Date.now() - new Date(t)) / 60000); return m < 1 ? '방금' : m < 60 ? `${m}분 전` : `${Math.round(m / 60)}시간 전`; };
+  async function loadLesson() {
+    classes = await api('/classes');
+    const chips = $('#ls-chips');
+    if (!classes.length) {
+      chips.innerHTML = ''; $('#ls-sum').innerHTML = '';
+      $('#ls-grid').innerHTML = `<div class="card empty" style="grid-column:1/-1">${isTeacher() ? '아직 담당 반이 없어요. 원장님께 담당 반 지정을 부탁해 주세요.' : '아직 반이 없어요. 반·학생 메뉴에서 반을 만들어 주세요.'}</div>`;
+      return;
+    }
+    let cur = getLS();
+    if (!classes.some((c) => c.id === cur)) cur = classes[0].id;
+    chips.innerHTML = classes.map((c) => `<button role="tab" data-cls="${esc(c.id)}" aria-selected="${c.id === cur}">${esc(c.name)} · ${c.students}명</button>`).join('');
+    $$('[data-cls]', chips).forEach((b) => (b.onclick = () => { setLS(b.dataset.cls); loadLesson().catch((e) => toast(e.message)); }));
+    const d = await api(`/classes/${cur}/today`);
+    $('#ls-sum').innerHTML = `<span class="pill brand">오늘 이용 ${d.summary.active} / ${d.summary.total}명</span>` +
+      (d.summary.needCheck ? `<span class="pill warn">먼저 볼 학생 ${d.summary.needCheck}명</span>` : '<span class="pill ok">특별히 볼 학생 없음</span>');
+    const LABEL = [['bad', '⚠️ 마음 확인 필요'], ['warn', '📖 완성 풀이 봄'], ['warn', '💡 힌트 많이 씀'], ['ok', '오늘 질문함'], ['', '오늘 아직 안 함']];
+    const rank = (x) => (x.flags ? 0 : x.solutions ? 1 : x.max_hint >= 3 ? 2 : x.questions || x.feedbacks ? 3 : 4);
+    $('#ls-grid').innerHTML = d.students.length ? d.students.map((x) => {
+      const r = rank(x); const [cls, lab] = LABEL[r];
+      return `<button class="stu r${r}" data-stu="${esc(x.id)}">
+        <span class="nm">${esc(x.nickname)} <small>${esc(x.login_code)}번</small></span>
+        <span><span class="pill ${cls}">${esc(lab)}</span></span>
+        <span class="ln">${[x.questions ? `질문 ${x.questions} · 해결 ${x.solved}` : '', x.feedbacks ? `첨삭 ${x.feedbacks}` : '', x.last_at ? ago(x.last_at) : ''].filter(Boolean).join(' · ') || '오늘 기록 없음'}</span>
+        ${x.topics ? `<span class="ln">📚 ${esc(x.topics)}</span>` : ''}</button>`;
+    }).join('') : '<div class="card empty" style="grid-column:1/-1">이 반에 등록된 학생이 없어요</div>';
+    $$('[data-stu]').forEach((b) => (b.onclick = async () => {
+      // 학생을 누르면 그 학생의 질문 기록으로
+      try { students = await api('/students'); } catch { /* 목록 없이도 이동 */ }
+      go('sessions');
+      setTimeout(() => { $('#ss-student').value = b.dataset.stu; loadSessions().catch((e) => toast(e.message)); }, 50);
+    }));
+  }
+
+  // ---------- 선생님 계정 (원장만) ----------
+  let teachers = [];
+  async function loadTeachers() {
+    [teachers, classes] = await Promise.all([api('/teachers'), api('/classes')]);
+    const name = (id) => classes.find((c) => c.id === id)?.name || '';
+    $('#tc-list').innerHTML = teachers.length ? teachers.map((t) => `<div class="card">
+      <div class="row-head" style="margin:0"><h2>${esc(t.name || '')}</h2>${t.must_change_pw ? '<span class="pill warn">첫 로그인 전</span>' : ''}<span class="sp"></span><span class="note">${t.last_login_at ? '최근 접속 ' + time(t.last_login_at) : '접속 기록 없음'}</span></div>
+      <div class="note">${esc(t.email)}</div>
+      <div class="tc-classes">${t.class_ids.length ? t.class_ids.map((id) => `<span class="pill brand">${esc(name(id))}</span>`).join('') : '<span class="pill warn">담당 반 없음</span>'}</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn small" data-tc-edit="${esc(t.id)}">담당 반·이름</button><button class="btn ghost small" data-tc-pw="${esc(t.id)}">임시 비밀번호 다시 주기</button><button class="btn danger small" data-tc-del="${esc(t.id)}">계정 삭제</button></div>
+    </div>`).join('') : '<div class="card empty">아직 선생님 계정이 없어요. "+ 선생님 추가"로 만들어 주세요.</div>';
+    $$('[data-tc-edit]').forEach((b) => (b.onclick = () => teacherForm(teachers.find((t) => t.id === b.dataset.tcEdit))));
+    $$('[data-tc-pw]').forEach((b) => (b.onclick = () => teacherPw(teachers.find((t) => t.id === b.dataset.tcPw))));
+    $$('[data-tc-del]').forEach((b) => (b.onclick = async () => {
+      if (b.dataset.sure !== '1') { b.dataset.sure = '1'; b.textContent = '한 번 더 누르면 삭제돼요'; return; }
+      try { await api(`/teachers/${b.dataset.tcDel}`, { method: 'DELETE' }); toast('선생님 계정을 삭제했어요'); loadTeachers(); } catch (e) { toast(e.message); }
+    }));
+  }
+  const tempPw = () => { const a = 'abcdefghjkmnpqrstuvwxyz23456789'; let out = ''; for (const n of crypto.getRandomValues(new Uint32Array(10))) out += a[n % a.length]; return out; };
+  const classChecks = (sel) => (classes.length ? `<div class="checks">${classes.map((c) => `<label class="check"><input type="checkbox" name="tc-cls" value="${esc(c.id)}" ${sel.includes(c.id) ? 'checked' : ''}> ${esc(c.name)} <span class="note">· 학생 ${c.students}명</span></label>`).join('')}</div>` : '<p class="note">먼저 반·학생 메뉴에서 반을 만들어 주세요.</p>');
+  function teacherForm(t) {
+    const p = openDrawer(top(t ? '담당 반·이름 수정' : '선생님 추가') + `<form class="form" id="tf">
+      <label class="f">이름<input id="tf-name" maxlength="20" value="${esc(t?.name || '')}" placeholder="예: 김하연 선생님" required></label>
+      ${t ? `<p class="note">${esc(t.email)}</p>` : `<label class="f">이메일 (로그인 아이디)<input id="tf-email" type="email" autocomplete="off" required></label>
+      <label class="f">임시 비밀번호 (선생님께 전해 주세요)<input id="tf-pw" value="${tempPw()}" minlength="8" autocomplete="off" required></label>
+      <p class="note">선생님은 처음 로그인할 때 비밀번호를 새로 정해요.</p>`}
+      <div class="f">담당 반 <span class="note" style="font-weight:400">체크한 반의 학생만 선생님 화면에 보여요</span></div>
+      ${classChecks(t?.class_ids || [])}
+      <button class="btn" type="submit">${t ? '저장' : '계정 만들기'}</button><p class="msg" id="tf-msg"></p></form>`);
+    $('#tf', p).onsubmit = async (e) => {
+      e.preventDefault();
+      const classIds = $$('input[name=tc-cls]:checked', p).map((x) => x.value);
+      try {
+        if (t) {
+          await api(`/teachers/${t.id}`, { method: 'PUT', body: { name: $('#tf-name', p).value.trim(), classIds } });
+          closeDrawer(); toast('저장했어요');
+        } else {
+          const pw = $('#tf-pw', p).value; const email = $('#tf-email', p).value.trim();
+          await api('/teachers', { body: { name: $('#tf-name', p).value.trim(), email, password: pw, classIds } });
+          openDrawer(top('계정을 만들었어요') + `<p>아래 내용을 선생님께 전해 주세요.</p>
+            <div class="card" style="box-shadow:none"><div class="note">접속 주소</div><b>${esc(location.origin)}/director</b><div class="note" style="margin-top:8px">이메일</div><b>${esc(email)}</b><div class="note" style="margin-top:8px">임시 비밀번호</div><b>${esc(pw)}</b></div>
+            <p class="note">임시 비밀번호는 지금만 보여요. 처음 로그인하면 선생님이 새 비밀번호로 바꿔요.</p>`);
+          toast('선생님 계정을 만들었어요');
+        }
+        loadTeachers();
+      } catch (err) { msg('#tf-msg', err.message); }
+    };
+  }
+  function teacherPw(t) {
+    const p = openDrawer(top('임시 비밀번호 다시 주기') + `<p><b>${esc(t.name || t.email)}</b> 선생님이 비밀번호를 잊었을 때 써요. 저장하면 예전 비밀번호로는 들어올 수 없어요.</p>
+      <form class="form" id="tp"><label class="f">새 임시 비밀번호<input id="tp-pw" value="${tempPw()}" minlength="8" autocomplete="off" required></label>
+      <button class="btn" type="submit">저장</button><p class="msg" id="tp-msg"></p></form>`);
+    $('#tp', p).onsubmit = async (e) => {
+      e.preventDefault();
+      try { await api(`/teachers/${t.id}/password`, { body: { password: $('#tp-pw', p).value } }); msg('#tp-msg', '저장했어요. 선생님께 새 임시 비밀번호를 전해 주세요', true); loadTeachers(); } catch (err) { msg('#tp-msg', err.message); }
+    };
+  }
+  $('#add-teacher').onclick = async () => { if (!classes.length) classes = await api('/classes'); teacherForm(null); };
 
   boot();
 })();

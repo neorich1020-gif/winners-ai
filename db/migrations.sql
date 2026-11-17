@@ -100,3 +100,32 @@ END $$;
 UPDATE academies SET counsel_tone = '원장님이 직접 카톡을 쓰듯 따뜻하고 담백하게. 이번 주 아이의 구체적인 한 장면과 다음 주 계획, 가정에서 도와주실 한 가지를 짧게.'
  WHERE counsel_tone LIKE '따뜻하고 꼼꼼하게. 학부모님께 정중한 존댓말, 구체적인 장면%';
 ALTER TABLE academies ALTER COLUMN counsel_tone SET DEFAULT '원장님이 직접 카톡을 쓰듯 따뜻하고 담백하게. 이번 주 아이의 구체적인 한 장면과 다음 주 계획, 가정에서 도와주실 한 가지를 짧게.';
+
+-- ---------- 2026-11 선생님 계정 + 담당 반 ----------
+-- 원장이 선생님 계정(이메일 + 임시 비밀번호)을 만들고 담당 반을 정한다.
+-- 선생님은 담당 반 학생·질문 기록만 보고, 수업할 때 반을 골라 그 반 학생을 한눈에 본다.
+ALTER TABLE staff ADD COLUMN IF NOT EXISTS name TEXT;
+ALTER TABLE staff ADD COLUMN IF NOT EXISTS must_change_pw BOOLEAN NOT NULL DEFAULT false;  -- 임시 비밀번호로 처음 로그인하면 바꾸게
+CREATE TABLE IF NOT EXISTS teacher_classes (
+  academy_id  UUID NOT NULL REFERENCES academies(id) ON DELETE CASCADE,
+  staff_id    UUID NOT NULL REFERENCES staff(id) ON DELETE CASCADE,
+  class_id    UUID NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (staff_id, class_id)
+);
+CREATE INDEX IF NOT EXISTS teacher_classes_class_idx ON teacher_classes (academy_id, class_id);
+ALTER TABLE teacher_classes ENABLE ROW LEVEL SECURITY;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='teacher_classes' AND policyname='tenant_isolation') THEN
+    CREATE POLICY tenant_isolation ON teacher_classes
+      USING (academy_id = NULLIF(current_setting('app.academy_id', true), '')::uuid);
+  END IF;
+END $$;
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='app_user') THEN
+    GRANT SELECT, INSERT, UPDATE, DELETE ON teacher_classes TO app_user;
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='batch_user') THEN
+    GRANT SELECT, INSERT, UPDATE, DELETE ON teacher_classes TO batch_user;
+  END IF;
+END $$;

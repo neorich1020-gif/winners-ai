@@ -18,6 +18,8 @@ const { buildStats, mondayOf, nowKST } = require('../jobs/weeklyReport');
 
 const r = express.Router();
 r.use(requireAuth('staff'));
+// 학부모 상담글·알림톡은 원장님만 (선생님 계정은 담당 반 학생 보기·질문 기록까지)
+r.use((req, res, next) => (req.user.role === 'owner' ? next() : res.status(403).json({ error: '원장 권한이 필요합니다' })));
 const T = (req, fn) => withTenant(req.user.aid, fn);
 // 학생 ID 형식이 아니면 DB까지 가지 않고 404
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

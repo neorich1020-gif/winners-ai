@@ -30,6 +30,7 @@ async function toss(path, body) {
 
 // 1) 카드 등록창을 띄우기 위한 정보 (customerKey는 추측 불가한 랜덤값)
 r.get('/setup', requireAuth('staff'), async (req, res) => {
+  if (req.user.role !== 'owner') return res.status(403).json({ error: '원장 권한이 필요합니다' }); // 카드 등록은 원장만
   let sub = (await pool.query('SELECT customer_key FROM subscriptions WHERE academy_id=$1', [req.user.aid])).rows[0];
   const price = await academyPrice(req.user.aid);
   if (!sub) {
@@ -43,6 +44,7 @@ r.get('/setup', requireAuth('staff'), async (req, res) => {
 
 // 2) 카드 등록 성공 콜백 → 빌링키 발급 → 첫 결제
 r.get('/success', requireAuth('staff'), async (req, res) => {
+  if (req.user.role !== 'owner') return res.status(403).json({ error: '원장 권한이 필요합니다' }); // 카드 등록은 원장만
   const { authKey, customerKey } = req.query;
   const sub = (await pool.query('SELECT * FROM subscriptions WHERE academy_id=$1 AND customer_key=$2', [req.user.aid, customerKey])).rows[0];
   if (!sub) return res.redirect('/director#billing-fail');

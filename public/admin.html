@@ -75,6 +75,22 @@ tr.click{cursor:pointer} tr.click:hover td{background:var(--soft)}
 .msg{font-size:13.5px;margin:6px 0 0;min-height:1em}
 .msg.err{color:var(--bad)} .msg.ok{color:var(--ok)}
 .empty{padding:26px;text-align:center;color:var(--sub);font-size:14px}
+/* 원장/선생님 화면 구분 */
+body.is-teacher .owner-only{display:none!important}
+body:not(.is-teacher) .teacher-only{display:none!important}
+/* 수업 중인 반 */
+.class-chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.class-chips button{padding:10px 16px;border-radius:999px;background:var(--surface);box-shadow:inset 0 0 0 1px var(--line);font-weight:700;font-size:15px;min-height:44px}
+.class-chips button[aria-selected="true"]{background:var(--brand);color:var(--brand-ink);box-shadow:none}
+.ls-sum{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.ls-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.stu{display:flex;flex-direction:column;gap:6px;text-align:left;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px 16px;min-height:44px;box-shadow:var(--shadow);border-left:5px solid var(--line)}
+.stu.r0{border-left-color:var(--bad)} .stu.r1{border-left-color:var(--warn)} .stu.r2{border-left-color:#E8A03A} .stu.r3{border-left-color:var(--ok)}
+.stu .nm{display:flex;align-items:center;gap:8px;font-weight:800;font-size:16px}
+.stu .nm small{color:var(--sub);font-weight:600;font-size:12.5px}
+.stu .ln{font-size:13px;color:var(--sub)}
+.tc-classes{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}
+.checks{display:flex;flex-direction:column;gap:8px;max-height:280px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:10px 12px}
 .bar-row{display:grid;grid-template-columns:120px minmax(0,1fr) auto;gap:10px;align-items:center;font-size:13.5px;margin-bottom:8px}
 .bar{height:8px;background:var(--soft);border-radius:999px;overflow:hidden}
 .bar i{display:block;height:100%;background:var(--brand);border-radius:999px}
@@ -151,18 +167,36 @@ tr.click{cursor:pointer} tr.click:hover td{background:var(--soft)}
   <aside class="side">
     <div class="brand">멘트윈<small id="acad-name"></small></div>
     <nav id="nav" aria-label="메뉴">
+      <button data-view="lesson">🧑‍🏫 수업 중인 반</button>
       <button data-view="home" aria-current="true">🏠 오늘 현황<span class="badge" id="flag-badge" hidden></span></button>
       <button data-view="sessions">💬 질문 기록</button>
       <button data-view="students">👩‍🎓 반·학생</button>
-      <button data-view="counsel">✉️ 주간 상담</button>
+      <button data-view="teachers" class="owner-only">👥 선생님</button>
+      <button data-view="counsel" class="owner-only">✉️ 주간 상담</button>
       <button data-view="feedback">✍️ 첨삭 기록</button>
-      <button data-view="settings">⚙️ 설정</button>
-      <button data-view="billing">💳 요금</button>
+      <button data-view="settings"><span class="owner-only">⚙️ 설정</span><span class="teacher-only">🔑 내 계정</span></button>
+      <button data-view="billing" class="owner-only">💳 요금</button>
     </nav>
     <div class="foot"><span id="me-email"></span><button class="btn ghost small" id="logout">로그아웃</button></div>
   </aside>
 
   <main class="main">
+    <!-- 수업 중인 반: 반을 고르면 그 반 학생의 오늘 학습 상황 -->
+    <section id="v-lesson" hidden>
+      <h1>수업 중인 반</h1>
+      <p class="lead">지금 수업하는 반을 고르면 그 반 학생들이 보여요. 먼저 살펴볼 학생이 위에 와요.</p>
+      <div class="class-chips" id="ls-chips" role="tablist" aria-label="반 고르기"></div>
+      <div class="ls-sum" id="ls-sum"></div>
+      <div class="ls-grid" id="ls-grid"></div>
+    </section>
+
+    <!-- 선생님 (원장만) -->
+    <section id="v-teachers" hidden>
+      <div class="row-head"><h1>선생님</h1><span class="sp"></span><button class="btn" id="add-teacher">+ 선생님 추가</button></div>
+      <p class="lead">선생님마다 담당 반을 정하면, 선생님은 그 반 학생과 질문 기록만 봐요. 학부모 상담·설정·요금은 원장님만 볼 수 있어요.</p>
+      <div class="grid g2" id="tc-list"></div>
+    </section>
+
     <!-- 오늘 현황 -->
     <section id="v-home">
       <h1>오늘 현황</h1>
@@ -211,10 +245,10 @@ tr.click{cursor:pointer} tr.click:hover td{background:var(--soft)}
 
     <!-- 설정 -->
     <section id="v-settings" hidden>
-      <h1>설정</h1>
-      <p class="lead">튜터의 지도 방식과 말투, 학부모 발송 시각, 이번 주 교재를 정해요.</p>
+      <h1><span class="owner-only">설정</span><span class="teacher-only">내 계정</span></h1>
+      <p class="lead owner-only">튜터의 지도 방식과 말투, 학부모 발송 시각, 이번 주 교재를 정해요.</p>
       <div class="grid g2">
-        <form class="card form" id="mode-form">
+        <form class="card form owner-only" id="mode-form">
           <h2>지도 방식</h2>
           <div class="radio">
             <label><input type="radio" name="mode" value="key_hint"><span><b>멘트윈 핵심 힌트형</b><span class="note">개념 퀴즈 → 해결 흐름 3단계 → 접어 둔 결정적 힌트(도식·비유). 학생이 풀어 내면 오답노트 인증.</span></span></label>
@@ -222,14 +256,14 @@ tr.click{cursor:pointer} tr.click:hover td{background:var(--soft)}
           </div>
           <button class="btn" type="submit">지도 방식 저장</button><p class="msg" id="mode-msg"></p>
         </form>
-        <form class="card form" id="persona-form">
+        <form class="card form owner-only" id="persona-form">
           <h2>튜터 말투</h2>
           <label class="f">학생들이 부르는 호칭<input id="p-name" maxlength="20"></label>
           <label class="f">말투 설명<textarea id="p-style" maxlength="800"></textarea></label>
           <label class="f">평소 자주 하시는 말 (한 줄에 하나)<textarea id="p-examples" maxlength="2000"></textarea></label>
           <button class="btn" type="submit">말투 저장</button><p class="msg" id="persona-msg"></p>
         </form>
-        <form class="card form" id="report-form">
+        <form class="card form owner-only" id="report-form">
           <h2>학부모 주간 상담 발송</h2>
           <div class="form two">
             <label class="f">발송 요일<select id="r-day"><option value="1">월요일</option><option value="2">화요일</option><option value="3">수요일</option><option value="4">목요일</option><option value="5">금요일</option><option value="6">토요일</option><option value="0">일요일</option></select></label>
@@ -253,7 +287,7 @@ tr.click{cursor:pointer} tr.click:hover td{background:var(--soft)}
           </form>
           <div id="mat-list"></div>
         </div>
-        <form class="card form" id="academy-form">
+        <form class="card form owner-only" id="academy-form">
           <h2>학원 정보</h2>
           <label class="f">학원명<input id="a-name" maxlength="40"></label>
           <label class="f">원장님 성함 (상담글·튜터가 쓰는 이름)<input id="a-dir" maxlength="20"></label>
